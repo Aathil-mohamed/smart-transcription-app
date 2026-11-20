@@ -1,45 +1,115 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# ==============================================================================
+# Flutter / Dart / Pub
+# ==============================================================================
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
-
-# Symbolication related
+**/doc/api/
+**/ios/Flutter/.last_build_id
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# ==============================================================================
+# IDE & Code Editors
+# ==============================================================================
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Other Editors
+.atom/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+
+# ==============================================================================
+# Environment Variables, Secrets & Signing Keys
+# ==============================================================================
+.env
+.env.*
+*.env
+*.key
+*.keystore
+*.jks
+**/android/key.properties
+secring.gpg
+
+# Firebase client configuration (contains project credentials)
+lib/firebase_options.dart
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# ==============================================================================
+# Operating System Files
+# ==============================================================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# ==============================================================================
+# Platform Build & Ephemeral Artifacts
+# ==============================================================================
+# Android
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/**/generated/
+**/android/**/.cxx/
+
+# iOS / macOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/**/Generated.xcconfig
+**/ios/**/flutter_export_environment.sh
+**/ios/**/Flutter.framework
+**/ios/**/Flutter.podspec
+**/macos/Pods/
+**/xcuserdata/
+*.mode1v3
+*.mode2v3
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+
+# Ephemeral folders generated on Windows, macOS, Linux
+**/ephemeral/
+
+# ==============================================================================
+# Logs, Temp & Crash Files
+# ==============================================================================
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.class
+*.pyc
+*.dmp
+*.crash
+*.stackdump
+migrate_working_dir/

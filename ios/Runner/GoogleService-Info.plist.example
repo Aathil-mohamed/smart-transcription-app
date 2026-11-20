@@ -3,22 +3,22 @@
 <plist version="1.0">
 <dict>
   <key>PROJECT_ID</key>
-  <string>smart-transcription-app</string>
+  <string>YOUR_PROJECT_ID</string>
   <key>STORAGE_BUCKET</key>
-  <string>smart-transcription-app.firebasestorage.app</string>
+  <string>YOUR_PROJECT_ID.firebasestorage.app</string>
   <key>GCM_SENDER_ID</key>
-  <string>863918765256</string>
+  <string>000000000000</string>
   <key>API_KEY</key>
   <dict>
     <key>API_KEY</key>
-    <string>AIzaSyBnXGWZT2CtfBgr508JdWENpgvFSulPPNU</string>
+    <string>AIzaSy_YOUR_API_KEY_HERE</string>
   </dict>
   <key>CLIENT_ID</key>
   <string></string>
   <key>REVERSED_CLIENT_ID</key>
   <string></string>
   <key>GOOGLE_APP_ID</key>
-  <string>1:863918765256:ios:0000000000000000000000</string>
+  <string>1:000000000000:ios:0000000000000000000000</string>
   <key>PLIST_VERSION</key>
   <string>1</string>
   <key>BUNDLE_ID</key>
