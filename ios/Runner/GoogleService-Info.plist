@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PROJECT_ID</key>
+  <string>smart-transcription-app</string>
+  <key>STORAGE_BUCKET</key>
+  <string>smart-transcription-app.firebasestorage.app</string>
+  <key>GCM_SENDER_ID</key>
+  <string>863918765256</string>
+  <key>API_KEY</key>
+  <dict>
+    <key>API_KEY</key>
+    <string>AIzaSyBnXGWZT2CtfBgr508JdWENpgvFSulPPNU</string>
+  </dict>
+  <key>CLIENT_ID</key>
+  <string></string>
+  <key>REVERSED_CLIENT_ID</key>
+  <string></string>
+  <key>GOOGLE_APP_ID</key>
+  <string>1:863918765256:ios:0000000000000000000000</string>
+  <key>PLIST_VERSION</key>
+  <string>1</string>
+  <key>BUNDLE_ID</key>
+  <string>com.smarttranscribe.smart_transcription_app</string>
+</dict>
+</plist>

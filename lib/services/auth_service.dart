@@ -1,0 +1,97 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/user_model.dart';
+import '../core/constants/app_constants.dart';
+
+class AuthService {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Stream to listen to Authentication State changes
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  // Get current user ID
+  String? get currentUid => _auth.currentUser?.uid;
+
+  // Sign In with Email and Password
+  Future<UserCredential> signInWithEmailAndPassword(String email, String password) async {
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      throw _handleAuthException(e);
+    }
+  }
+
+  // Register with Email, Password and Name
+  Future<UserCredential> registerWithEmailAndPassword({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // 1. Create user in Firebase Auth
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final String uid = credential.user!.uid;
+
+      // 2. Create corresponding User Profile in Firestore
+      final userModel = UserModel(
+        uid: uid,
+        name: name,
+        email: email,
+        createdAt: DateTime.now(),
+      );
+
+      await _firestore
+          .collection(AppConstants.collectionUsers)
+          .doc(uid)
+          .set(userModel.toMap());
+
+      return credential;
+    } on FirebaseAuthException catch (e) {
+      throw _handleAuthException(e);
+    }
+  }
+
+  // Fetch User Details from Firestore
+  Future<UserModel?> getUserDetails(String uid) async {
+    try {
+      final doc = await _firestore.collection(AppConstants.collectionUsers).doc(uid).get();
+      if (doc.exists) {
+        return UserModel.fromDocument(doc);
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Failed to fetch user details: $e');
+    }
+  }
+
+  // Sign Out
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
+
+  // Error Helper
+  String _handleAuthException(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'user-not-found':
+        return 'No user found for that email.';
+      case 'wrong-password':
+        return 'Wrong password provided for that user.';
+      case 'email-already-in-use':
+        return 'The email account already exists.';
+      case 'invalid-email':
+        return 'The email address is invalid.';
+      case 'weak-password':
+        return 'The password provided is too weak.';
+      default:
+        return e.message ?? 'An unknown authentication error occurred.';
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "863918765256",
+    "project_id": "smart-transcription-app",
+    "storage_bucket": "smart-transcription-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:863918765256:android:50bcca6b8389d909dd61fd",
+        "android_client_info": {
+          "package_name": "com.smarttranscribe.smart_transcription_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnXGWZT2CtfBgr508JdWENpgvFSulPPNU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
