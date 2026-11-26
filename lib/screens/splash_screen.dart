@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/config/app_config.dart';
+import '../core/theme/app_design_tokens.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/app_logo.dart';
 import 'auth_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -66,78 +69,58 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
+    final tokens = context.tokens;
+    final config = ref.watch(appConfigProvider);
+
     return Scaffold(
+      backgroundColor: tokens.background,
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              theme.colorScheme.surface,
-              theme.colorScheme.primary.withValues(alpha: 0.2),
-              theme.colorScheme.surface,
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        color: tokens.background,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Floating Mic icon with animation scale
+            // Animated App Logo
             ScaleTransition(
               scale: _scaleAnimation,
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                    width: 2,
-                  ),
-                ),
-                child: Icon(
-                  Icons.mic,
-                  size: 80,
-                  color: theme.colorScheme.secondary,
-                ),
+              child: const AppLogo(
+                height: 96,
+                fit: BoxFit.contain,
               ),
             ),
-            const SizedBox(height: 32),
+            SizedBox(height: tokens.spaceXl),
 
             // App Brand Name
             Text(
-              'Smart Transcribe',
+              config.branding.appName,
               style: TextStyle(
-                fontSize: 32,
+                fontSize: tokens.fontDisplay,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.0,
-                color: theme.colorScheme.onSurface,
+                color: tokens.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spaceSm),
 
             // App Subtitle
             Text(
               'Real-Time Speech Transcription',
               style: TextStyle(
-                fontSize: 16,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                fontSize: tokens.fontMd,
+                color: tokens.textSecondary,
                 letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(height: 64),
+            SizedBox(height: tokens.spaceXxl),
 
             // Loading indicator
             SizedBox(
-              width: 40,
-              height: 40,
+              width: tokens.spaceXl,
+              height: tokens.spaceXl,
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.secondary),
+                valueColor: AlwaysStoppedAnimation<Color>(tokens.primary),
               ),
             ),
           ],

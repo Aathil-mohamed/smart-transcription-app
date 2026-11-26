@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "Smart Transcription System",
+  "appTitle": "Scribly",
   "apiKeyLabel": "Enter Groq API Key",
   "apiKeyHint": "Paste your API key here",
   "retryTitle": "Transcription Incomplete",

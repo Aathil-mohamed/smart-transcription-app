@@ -593,6 +593,40 @@ class ExportConfig {
   }
 }
 
+class BrandingConfig {
+  final String logoBlack;
+  final String logoWhite;
+  final String iconFull;
+  final String iconForeground;
+  final String appName;
+
+  const BrandingConfig({
+    required this.logoBlack,
+    required this.logoWhite,
+    required this.iconFull,
+    required this.iconForeground,
+    required this.appName,
+  });
+
+  factory BrandingConfig.fromJson(Map<String, dynamic> json) {
+    _requireKeys(json, [
+      'logoBlack',
+      'logoWhite',
+      'iconFull',
+      'iconForeground',
+      'appName',
+    ], 'BrandingConfig');
+
+    return BrandingConfig(
+      logoBlack: json['logoBlack'] as String,
+      logoWhite: json['logoWhite'] as String,
+      iconFull: json['iconFull'] as String,
+      iconForeground: json['iconForeground'] as String,
+      appName: json['appName'] as String,
+    );
+  }
+}
+
 class AppConfig {
   final ApiConfig api;
   final TranscriptionConfig transcription;
@@ -604,6 +638,7 @@ class AppConfig {
   final PreferencesConfig preferences;
   final SecretsConfig secrets;
   final ExportConfig export;
+  final BrandingConfig branding;
 
   const AppConfig({
     required this.api,
@@ -616,6 +651,7 @@ class AppConfig {
     required this.preferences,
     required this.secrets,
     required this.export,
+    required this.branding,
   });
 
   factory AppConfig.fromJson(Map<String, dynamic> json) {
@@ -630,6 +666,7 @@ class AppConfig {
       'preferences',
       'secrets',
       'export',
+      'branding',
     ], 'AppConfig');
 
     return AppConfig(
@@ -647,6 +684,7 @@ class AppConfig {
       preferences: PreferencesConfig.fromJson(json['preferences'] as Map<String, dynamic>),
       secrets: SecretsConfig.fromJson(json['secrets'] as Map<String, dynamic>),
       export: ExportConfig.fromJson(json['export'] as Map<String, dynamic>),
+      branding: BrandingConfig.fromJson(json['branding'] as Map<String, dynamic>),
     );
   }
 

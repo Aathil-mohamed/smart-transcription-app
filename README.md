@@ -1,6 +1,6 @@
-# smart_transcription_app
+# Scribly
 
-A new Flutter project.
+Scribly - Smart AI Speech Transcription System
 
 ## Getting Started
 

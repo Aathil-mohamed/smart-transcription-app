@@ -1,0 +1,23 @@
+flutter_launcher_icons:
+  android: true
+  adaptive_icon_background: "#0F0E17"
+  adaptive_icon_foreground: "assets/branding/icon_foreground.png"
+  adaptive_icon_monochrome: "assets/branding/icon_monochrome.png"
+  image_path: "assets/branding/icon_full.png"
+  ios: true
+  image_path_ios: "assets/branding/icon_full.png"
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/branding/icon_full.png"
+    background_color: "#0F0E17"
+    theme_color: "#6C63FF"
+  windows:
+    generate: true
+    image_path: "assets/branding/icon_full.png"
+  macos:
+    generate: true
+    image_path: "assets/branding/icon_full.png"
+  linux:
+    generate: true
+    image_path: "assets/branding/icon_full.png"

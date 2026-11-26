@@ -9,7 +9,7 @@ class AppLocalizationsTa extends AppLocalizations {
   AppLocalizationsTa([String locale = 'ta']) : super(locale);
 
   @override
-  String get appTitle => 'ஸ்மார்ட் டிரான்ஸ்கிரிப்ஷன் சிஸ்டம்';
+  String get appTitle => 'ஸ்கிரிப்லி';
 
   @override
   String get apiKeyLabel => 'Groq API விசையை உள்ளிடவும்';

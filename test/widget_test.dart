@@ -126,6 +126,13 @@ void main() {
       'pdfMetadataFontSize': 10.0,
       'pdfAccentColorHex': '#6C5CE7',
     },
+    'branding': {
+      'logoBlack': 'assets/branding/logo_black.png',
+      'logoWhite': 'assets/branding/logo_white.png',
+      'iconFull': 'assets/branding/icon_full.png',
+      'iconForeground': 'assets/branding/icon_foreground.png',
+      'appName': 'Scribly',
+    },
   };
 
   testWidgets('App shows splash screen', (WidgetTester tester) async {
@@ -144,7 +151,7 @@ void main() {
     );
 
     await tester.pump();
-    expect(find.text('Smart Transcribe'), findsOneWidget);
+    expect(find.text('Scribly'), findsOneWidget);
     expect(find.text('Real-Time Speech Transcription'), findsOneWidget);
   });
 }
