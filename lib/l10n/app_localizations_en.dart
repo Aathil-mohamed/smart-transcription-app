@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Smart Transcription System';
+  String get appTitle => 'Scribly';
 
   @override
   String get apiKeyLabel => 'Enter Groq API Key';
