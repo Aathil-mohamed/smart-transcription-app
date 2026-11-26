@@ -315,11 +315,13 @@ class RecordNotifier extends StateNotifier<RecordState> {
 
       state = state.copyWith(liveText: 'Refining transcript using AI...');
 
+      final userVocab = _ref.read(settingsRepositoryProvider).customVocabulary;
       TranscriptionResult? pipelineResult;
       try {
         pipelineResult = await pipeline.transcribe(
           audioFile: File(finalAudioPath),
           language: langConfig,
+          additionalVocabulary: userVocab,
         );
       } catch (e) {
         debugPrint('Pipeline transcription failed: $e');
@@ -363,6 +365,9 @@ class RecordNotifier extends StateNotifier<RecordState> {
           duration: state.durationSecs,
           audioLocalPath: finalAudioPath,
           provider: providerName,
+          detectedLanguage: pipelineResult?.detectedLanguage,
+          segmentCount: pipelineResult?.segmentCount ?? segments?.length ?? 0,
+          droppedSegmentCount: pipelineResult?.droppedSegmentCount ?? 0,
           segments: segments,
           createdAt: DateTime.now(),
         );
@@ -400,9 +405,11 @@ class RecordNotifier extends StateNotifier<RecordState> {
       final langConfig = config.findLanguage(state.selectedLanguageCode);
       final pipeline = _ref.read(transcriptionPipelineProvider);
 
+      final userVocab = _ref.read(settingsRepositoryProvider).customVocabulary;
       final result = await pipeline.transcribe(
         audioFile: File(audioPath),
         language: langConfig,
+        additionalVocabulary: userVocab,
       );
 
       final currentUserId = _ref.read(authNotifierProvider).value?.uid;
@@ -418,6 +425,9 @@ class RecordNotifier extends StateNotifier<RecordState> {
           duration: state.durationSecs,
           audioLocalPath: audioPath,
           provider: result.provider,
+          detectedLanguage: result.detectedLanguage,
+          segmentCount: result.segmentCount,
+          droppedSegmentCount: result.droppedSegmentCount,
           segments: result.segments,
           createdAt: DateTime.now(),
         );

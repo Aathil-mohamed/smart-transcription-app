@@ -75,4 +75,10 @@ class AppLocalizationsTa extends AppLocalizations {
 
   @override
   String get errorUnknown => 'எதிர்பாராத பிழை ஏற்பட்டது.';
+
+  @override
+  String transcriptionDetails(
+      String provider, String detectedLang, int segments, int dropped) {
+    return 'இயந்திரம்: $provider • கண்டறியப்பட்டது: $detectedLang • பகுதிகள்: $segments (நீக்கப்பட்டது: $dropped)';
+  }
 }

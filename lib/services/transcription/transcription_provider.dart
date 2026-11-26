@@ -7,12 +7,16 @@ class TranscriptionResult {
   final List<TranscriptSegment> segments;
   final String provider;
   final String? detectedLanguage;
+  final int segmentCount;
+  final int droppedSegmentCount;
 
   const TranscriptionResult({
     required this.text,
     required this.segments,
     required this.provider,
     this.detectedLanguage,
+    this.segmentCount = 0,
+    this.droppedSegmentCount = 0,
   });
 }
 

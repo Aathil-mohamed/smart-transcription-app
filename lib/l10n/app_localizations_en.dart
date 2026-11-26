@@ -76,4 +76,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorUnknown => 'An unexpected error occurred.';
+
+  @override
+  String transcriptionDetails(
+      String provider, String detectedLang, int segments, int dropped) {
+    return 'Engine: $provider • Detected: $detectedLang • Segments: $segments (dropped: $dropped)';
+  }
 }

@@ -8,19 +8,22 @@ class QualityFilter {
 
   /// Filters raw verbose_json segments according to acoustic and statistical thresholds.
   ///
-  /// Returns a record containing the cleaned transcript string and the surviving segments.
-  ({String text, List<TranscriptSegment> segments}) filterSegments(
+  /// Returns a record containing the cleaned transcript string, the surviving segments,
+  /// the total raw segment count, and the count of segments dropped by the quality filter.
+  ({String text, List<TranscriptSegment> segments, int rawCount, int droppedCount}) filterSegments(
     List<dynamic> rawSegments,
   ) {
     if (rawSegments.isEmpty) {
-      return (text: '', segments: const <TranscriptSegment>[]);
+      return (text: '', segments: const <TranscriptSegment>[], rawCount: 0, droppedCount: 0);
     }
 
+    int rawValidCount = 0;
     final survivingSegments = <TranscriptSegment>[];
     String? lastNormalizedText;
 
     for (final raw in rawSegments) {
       if (raw is! Map<String, dynamic>) continue;
+      rawValidCount++;
 
       final text = (raw['text'] as String?)?.trim() ?? '';
       if (text.isEmpty) continue;
@@ -58,6 +61,11 @@ class QualityFilter {
     }
 
     final combinedText = survivingSegments.map((s) => s.text).join(' ').trim();
-    return (text: combinedText, segments: survivingSegments);
+    return (
+      text: combinedText,
+      segments: survivingSegments,
+      rawCount: rawValidCount,
+      droppedCount: rawValidCount - survivingSegments.length,
+    );
   }
 }

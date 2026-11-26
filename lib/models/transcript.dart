@@ -36,6 +36,9 @@ class TranscriptionModel {
   final String? audioUrl;
   final String? audioLocalPath;
   final String? provider;
+  final String? detectedLanguage;
+  final int? segmentCount;
+  final int? droppedSegmentCount;
   final List<TranscriptSegment>? segments;
   final DateTime createdAt;
 
@@ -49,6 +52,9 @@ class TranscriptionModel {
     this.audioUrl,
     this.audioLocalPath,
     this.provider,
+    this.detectedLanguage,
+    this.segmentCount,
+    this.droppedSegmentCount,
     this.segments,
     required this.createdAt,
   });
@@ -68,6 +74,9 @@ class TranscriptionModel {
     if (audioUrl != null) map['audioUrl'] = audioUrl;
     if (audioLocalPath != null) map['audioLocalPath'] = audioLocalPath;
     if (provider != null) map['provider'] = provider;
+    if (detectedLanguage != null) map['detectedLanguage'] = detectedLanguage;
+    if (segmentCount != null) map['segmentCount'] = segmentCount;
+    if (droppedSegmentCount != null) map['droppedSegmentCount'] = droppedSegmentCount;
     if (segments != null && segments!.isNotEmpty) {
       map['segments'] = segments!.map((s) => s.toMap()).toList();
     }
@@ -95,6 +104,9 @@ class TranscriptionModel {
       audioUrl: map['audioUrl'],
       audioLocalPath: map['audioLocalPath'],
       provider: map['provider'],
+      detectedLanguage: map['detectedLanguage'],
+      segmentCount: (map['segmentCount'] as num?)?.toInt() ?? parsedSegments?.length,
+      droppedSegmentCount: (map['droppedSegmentCount'] as num?)?.toInt(),
       segments: parsedSegments,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -121,6 +133,9 @@ class TranscriptionModel {
       audioUrl: data['audioUrl'],
       audioLocalPath: data['audioLocalPath'],
       provider: data['provider'],
+      detectedLanguage: data['detectedLanguage'],
+      segmentCount: (data['segmentCount'] as num?)?.toInt() ?? parsedSegments?.length,
+      droppedSegmentCount: (data['droppedSegmentCount'] as num?)?.toInt(),
       segments: parsedSegments,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -135,6 +150,9 @@ class TranscriptionModel {
     String? audioUrl,
     String? audioLocalPath,
     String? provider,
+    String? detectedLanguage,
+    int? segmentCount,
+    int? droppedSegmentCount,
     List<TranscriptSegment>? segments,
   }) {
     return TranscriptionModel(
@@ -147,6 +165,9 @@ class TranscriptionModel {
       audioUrl: audioUrl ?? this.audioUrl,
       audioLocalPath: audioLocalPath ?? this.audioLocalPath,
       provider: provider ?? this.provider,
+      detectedLanguage: detectedLanguage ?? this.detectedLanguage,
+      segmentCount: segmentCount ?? this.segmentCount,
+      droppedSegmentCount: droppedSegmentCount ?? this.droppedSegmentCount,
       segments: segments ?? this.segments,
       createdAt: createdAt,
     );

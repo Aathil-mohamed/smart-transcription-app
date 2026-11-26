@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../core/theme/app_design_tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../models/transcript.dart';
 import '../providers/record_provider.dart';
 import 'export_screen.dart';
@@ -187,6 +189,24 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
                   ),
                 ],
               ),
+              // Debug Details Line
+              if (_transcription!.provider != null) ...[
+                SizedBox(height: context.tokens.spaceSm),
+                Text(
+                  AppLocalizations.of(context)?.transcriptionDetails(
+                        _transcription!.provider!,
+                        _transcription!.detectedLanguage ?? _transcription!.language,
+                        _transcription!.segmentCount ?? _transcription!.segments?.length ?? 0,
+                        _transcription!.droppedSegmentCount ?? 0,
+                      ) ??
+                      'Engine: ${_transcription!.provider} • Detected: ${_transcription!.detectedLanguage ?? _transcription!.language} • Segments: ${_transcription!.segmentCount ?? _transcription!.segments?.length ?? 0} (dropped: ${_transcription!.droppedSegmentCount ?? 0})',
+                  style: TextStyle(
+                    fontSize: context.tokens.fontXs,
+                    color: context.tokens.textMuted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 12),

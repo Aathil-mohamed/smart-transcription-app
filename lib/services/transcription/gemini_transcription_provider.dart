@@ -129,6 +129,8 @@ class GeminiTranscriptionProvider implements TranscriptionProvider {
       segments: const [],
       provider: id,
       detectedLanguage: language.whisperLanguage,
+      segmentCount: 0,
+      droppedSegmentCount: 0,
     );
   }
 }

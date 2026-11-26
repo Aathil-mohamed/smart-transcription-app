@@ -211,6 +211,13 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'An unexpected error occurred.'**
   String get errorUnknown;
+
+  /// Debug details for transcription provider, detected language, and segments count
+  ///
+  /// In en, this message translates to:
+  /// **'Engine: {provider} • Detected: {detectedLang} • Segments: {segments} (dropped: {dropped})'**
+  String transcriptionDetails(
+      String provider, String detectedLang, int segments, int dropped);
 }
 
 class _AppLocalizationsDelegate
