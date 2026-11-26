@@ -12,6 +12,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'Smart Transcription System';
 
   @override
+  String get apiKeyLabel => 'Enter Groq API Key';
+
+  @override
+  String get apiKeyHint => 'Paste your API key here';
+
+  @override
   String get errorNoApiKey =>
       'No Groq API key configured. Please set your API key in Settings or environment.';
 

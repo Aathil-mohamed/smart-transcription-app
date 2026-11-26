@@ -1,22 +1,35 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/config/app_config.dart';
 import '../models/transcript.dart';
 import '../services/speech_service.dart';
 import '../services/whisper_service.dart';
 import '../services/firestore_service.dart';
+import '../services/secrets_service.dart';
 import 'auth_provider.dart';
 
 // Singletons for services
-final speechServiceProvider = Provider<SpeechService>((ref) => SpeechService());
-final whisperServiceProvider = Provider<WhisperService>((ref) => WhisperService());
-final firestoreServiceProvider = Provider<FirestoreService>((ref) => FirestoreService());
+final speechServiceProvider = Provider<SpeechService>((ref) {
+  final config = ref.watch(appConfigProvider);
+  return SpeechService(config);
+});
+
+final whisperServiceProvider = Provider<WhisperService>((ref) {
+  final config = ref.watch(appConfigProvider);
+  final secrets = ref.watch(secretsServiceProvider);
+  return WhisperService(config, secrets);
+});
+
+final firestoreServiceProvider = Provider<FirestoreService>((ref) {
+  final config = ref.watch(appConfigProvider);
+  return FirestoreService(config);
+});
 
 // State Model for recording
 enum RecordStatus { idle, recording, paused, finalizing }
@@ -90,10 +103,14 @@ class RecordNotifier extends StateNotifier<RecordState> {
     _stopTimers();
     try {
       await _audioRecorder.stop();
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('Audio recorder stop error in cancelRecording: $e\n$st');
+    }
     try {
       await _ref.read(speechServiceProvider).cancelListening();
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('Speech service cancel error in cancelRecording: $e\n$st');
+    }
     _previousText = '';
     _currentSegment = '';
     state = RecordState.initial();
@@ -138,7 +155,6 @@ class RecordNotifier extends StateNotifier<RecordState> {
       final initialized = await speechService.initialize(
         onError: (SpeechRecognitionError err) {
           debugPrint('Speech Engine Error: ${err.errorMsg}');
-          // If speech times out or fails, restart if recording
           if (state.status == RecordStatus.recording) {
             _restartListening();
           }
@@ -159,14 +175,23 @@ class RecordNotifier extends StateNotifier<RecordState> {
         return;
       }
 
-      // 3. Prepare Audio File Path
+      // 3. Prepare Audio File Path from config
+      final config = _ref.read(appConfigProvider);
       final directory = await getTemporaryDirectory();
-      final String filename = 'rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final String filename = '${config.audio.fileNamePrefix}${DateTime.now().millisecondsSinceEpoch}${config.audio.fileExtension}';
       _localAudioPath = '${directory.path}/$filename';
 
-      // 4. Start Audio Recorder
+      // 4. Start Audio Recorder with config
       await _audioRecorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc, sampleRate: 16000, numChannels: 1),
+        RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          sampleRate: config.audio.sampleRate,
+          numChannels: config.audio.numChannels,
+          bitRate: config.audio.bitRate,
+          autoGain: config.audio.autoGain,
+          echoCancel: config.audio.echoCancel,
+          noiseSuppress: config.audio.noiseSuppress,
+        ),
         path: _localAudioPath!,
       );
 
@@ -215,8 +240,9 @@ class RecordNotifier extends StateNotifier<RecordState> {
     }
 
     try {
+      final config = _ref.read(appConfigProvider);
       final speechService = _ref.read(speechServiceProvider);
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(Duration(milliseconds: config.speechToText.restartDelayMs));
       if (state.status != RecordStatus.recording) return;
 
       await speechService.startListening(
@@ -314,26 +340,18 @@ class RecordNotifier extends StateNotifier<RecordState> {
       String finalTranscript = nativeDraftText;
 
       // 2. Bilingual Whisper Refinement
-      // We run Whisper on the file if selected or to improve Tamil/English accuracy
       if (finalAudioPath != null) {
         state = state.copyWith(liveText: 'Refining transcript using AI...');
         try {
           final whisperService = _ref.read(whisperServiceProvider);
-          // Load custom API key from SharedPreferences
-          final prefs = await SharedPreferences.getInstance();
-          final customApiKey = prefs.getString('groq_api_key_custom');
-          // Query the API
           final refinedText = await whisperService.transcribeAudio(
             filePath: finalAudioPath,
             languageCode: state.selectedLanguageCode,
-            customApiKey: customApiKey,
           );
           if (refinedText.isNotEmpty) {
             finalTranscript = refinedText;
           }
         } catch (e) {
-          // If Whisper fails (e.g. invalid API key, network error), we warn but do NOT lose
-          // the native draft text. We fall back to the live transcript.
           debugPrint('Whisper failed, falling back to on-device draft: $e');
           state = state.copyWith(errorMessage: 'AI Refinement skipped (using live draft): $e');
         }
@@ -343,18 +361,15 @@ class RecordNotifier extends StateNotifier<RecordState> {
       final String? currentUserId = _ref.read(authNotifierProvider).value?.uid;
       if (currentUserId != null && finalTranscript.trim().isNotEmpty && finalTranscript != 'Speak now...' && finalTranscript != 'Listening...') {
         final docId = const Uuid().v4();
-        
-        // Pick language name based on code
-        String langName = 'Bilingual';
-        if (state.selectedLanguageCode == 'ta-IN') langName = 'Tamil';
-        if (state.selectedLanguageCode == 'en-US') langName = 'English';
+        final config = _ref.read(appConfigProvider);
+        final langConfig = config.findLanguage(state.selectedLanguageCode);
 
         final transcription = TranscriptionModel(
           transcriptionId: docId,
           userId: currentUserId,
           title: 'Transcription - ${DateTime.now().toString().split('.')[0]}',
           transcript: finalTranscript,
-          language: langName,
+          language: langConfig.displayName,
           duration: state.durationSecs,
           createdAt: DateTime.now(),
         );
@@ -370,7 +385,7 @@ class RecordNotifier extends StateNotifier<RecordState> {
         waveHistory: const [],
         durationSecs: 0,
         selectedLanguageCode: state.selectedLanguageCode,
-        errorMessage: state.errorMessage, // Preserve warning/error message if any
+        errorMessage: state.errorMessage,
       );
       _localAudioPath = null;
     } catch (e) {
@@ -381,22 +396,25 @@ class RecordNotifier extends StateNotifier<RecordState> {
     }
   }
 
-  // Timer helpers
+  // Timer helpers using config
   void _startTimers() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    final config = _ref.read(appConfigProvider);
+
+    _timer = Timer.periodic(Duration(milliseconds: config.audio.secondsIntervalMs), (timer) {
       state = state.copyWith(durationSecs: state.durationSecs + 1);
     });
 
-    _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
+    _amplitudeTimer = Timer.periodic(Duration(milliseconds: config.audio.amplitudeIntervalMs), (timer) async {
       final amp = await _audioRecorder.getAmplitude();
-      // Normalize db levels (from -160dB - 0dB) into a 0.0 - 1.0 multiplier
-      double normalized = (amp.current + 160) / 160;
+      final minDb = config.audio.minDb;
+      final maxDb = config.audio.maxDb;
+      final range = maxDb - minDb;
+      double normalized = range != 0 ? (amp.current - minDb) / range : 0.0;
       if (normalized < 0.0) normalized = 0.0;
       if (normalized > 1.0) normalized = 1.0;
 
-      // Keep last 40 wave samples for screen drawing
       final history = List<double>.from(state.waveHistory)..add(normalized);
-      if (history.length > 45) {
+      if (history.length > config.audio.waveHistoryLimit) {
         history.removeAt(0);
       }
 

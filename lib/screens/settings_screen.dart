@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'auth_screen.dart';
@@ -176,9 +177,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _apiKeyController,
-                      decoration: const InputDecoration(
-                        labelText: 'Enter Groq API Key (gsk_...)',
-                        prefixIcon: Icon(Icons.password_rounded),
+                      decoration: InputDecoration(
+                        labelText: AppLocalizations.of(context)?.apiKeyLabel ?? 'Enter Groq API Key',
+                        hintText: AppLocalizations.of(context)?.apiKeyHint ?? 'Paste your API key here',
+                        prefixIcon: const Icon(Icons.password_rounded),
                       ),
                       obscureText: true,
                     ),

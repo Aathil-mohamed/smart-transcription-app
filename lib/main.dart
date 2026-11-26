@@ -1,20 +1,25 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform, debugPrint;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
 
 import 'firebase_options.dart';
+import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
-import 'core/constants/app_constants.dart';
 
 void main() async {
-  // Ensure that Flutter widget binding is initialized before calling native modules
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase only on supported platforms.
+  // Load application configuration once at startup
+  final appConfig = await AppConfig.loadFromAsset();
+
+  // Initialize Firebase on supported platforms
   if (kIsWeb) {
     try {
       await Firebase.initializeApp(
@@ -23,10 +28,9 @@ void main() async {
     } catch (e) {
       debugPrint('Firebase web initialization failed: $e');
     }
-  } else if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
+  } else if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
     try {
-      // On mobile platforms, prefer native configuration (google-services.json / GoogleService-Info.plist)
-      // so call initializeApp without options. This allows the Firebase SDK to use platform files.
       await Firebase.initializeApp();
     } catch (e) {
       debugPrint('Firebase mobile initialization failed: $e');
@@ -35,28 +39,30 @@ void main() async {
     debugPrint('Firebase initialization skipped for unsupported platform: $defaultTargetPlatform');
   }
 
+  // Apply Firestore persistence settings from AppConfig
+  if (kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
+    try {
+      if (appConfig.firestore.cachePersistenceEnabled) {
+        FirebaseFirestore.instance.settings = const Settings(
+          persistenceEnabled: true,
+          cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+        );
+      }
+    } catch (e) {
+      debugPrint('Firestore persistence configuration failed: $e');
+    }
+  }
+
   runApp(
-    // Wrap entire application inside ProviderScope to enable Riverpod state management
-    const ProviderScope(
-      child: MyApp(),
+    ProviderScope(
+      overrides: [
+        appConfigProvider.overrideWithValue(appConfig),
+      ],
+      child: const MyApp(),
     ),
   );
-
-  // After app launch, perform a quick Firestore connectivity check and log the result.
-
-  // After app launch, perform a quick Firestore connectivity check and log the result.
-  // This runs non-blocking and helps confirm whether the app can reach Firestore.
-  Future.microtask(() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection(AppConstants.collectionTranscriptions)
-          .limit(1)
-          .get();
-      debugPrint('Firestore connectivity test succeeded: retrieved ${snapshot.docs.length} docs');
-    } catch (e) {
-      debugPrint('Firestore connectivity test failed: $e');
-    }
-  });
 }
 
 class MyApp extends ConsumerWidget {
@@ -64,19 +70,21 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch ThemeMode states
     final themeMode = ref.watch(themeNotifierProvider);
 
     return MaterialApp(
       title: 'Smart Transcription System',
       debugShowCheckedModeBanner: false,
-      
-      // Theme settings
       themeMode: themeMode,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      
-      // Launch Splash Screen
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
       home: const SplashScreen(),
     );
   }

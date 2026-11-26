@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/config/app_config.dart';
 import '../providers/record_provider.dart';
 import '../widgets/waveform_painter.dart';
-import '../core/constants/app_constants.dart';
 
 class RecorderScreen extends ConsumerWidget {
   const RecorderScreen({super.key});
@@ -11,6 +11,7 @@ class RecorderScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
+    final config = ref.watch(appConfigProvider);
     final recordState = ref.watch(recordNotifierProvider);
     final recordNotifier = ref.read(recordNotifierProvider.notifier);
 
@@ -60,10 +61,10 @@ class RecorderScreen extends ConsumerWidget {
                       value: recordState.selectedLanguageCode,
                       isExpanded: true,
                       dropdownColor: theme.colorScheme.surface,
-                      items: AppConstants.supportedLanguages.map((lang) {
+                      items: config.languages.map((lang) {
                         return DropdownMenuItem<String>(
-                          value: lang['code'],
-                          child: Text(lang['name']!, style: const TextStyle(fontSize: 15)),
+                          value: lang.code,
+                          child: Text(lang.name, style: const TextStyle(fontSize: 15)),
                         );
                       }).toList(),
                       onChanged: (val) {
@@ -86,7 +87,7 @@ class RecorderScreen extends ConsumerWidget {
                       const Icon(Icons.translate, size: 16),
                       const SizedBox(width: 8),
                       Text(
-                        'Language Locked: ${_getLanguageName(recordState.selectedLanguageCode)}',
+                        'Language Locked: ${config.findLanguage(recordState.selectedLanguageCode).displayName}',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ],
@@ -214,11 +215,6 @@ class RecorderScreen extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  // Helper: Get language display name
-  String _getLanguageName(String code) {
-    return AppConstants.supportedLanguages.firstWhere((element) => element['code'] == code)['name']!;
   }
 
   // Builder: control buttons

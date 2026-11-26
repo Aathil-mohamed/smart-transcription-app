@@ -1,43 +1,58 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import '../core/constants/app_constants.dart';
+import '../core/config/app_config.dart';
+import '../core/errors/service_error.dart';
+import 'secrets_service.dart';
 
 class WhisperService {
-  /// Transcribe recorded audio file to text using Whisper API (Groq free tier).
+  final AppConfig _config;
+  final SecretsService _secretsService;
+  final http.Client _client;
+
+  WhisperService(
+    this._config,
+    this._secretsService, {
+    http.Client? client,
+  }) : _client = client ?? http.Client();
+
+  /// Transcribe recorded audio file to text using Whisper API on Groq Cloud.
   ///
   /// Returns the transcribed text string.
-  /// Throws an [Exception] with a user-friendly message on failure.
+  /// Throws [ServiceException] with typed [ServiceErrorCode] on failure.
   Future<String> transcribeAudio({
     required String filePath,
     required String languageCode, // 'bilingual', 'ta-IN', 'en-US'
-    String? customApiKey,        // Allow user to supply their own key in Settings
+    String? customApiKey,        // Optional override from caller/settings
   }) async {
     final File audioFile = File(filePath);
     if (!await audioFile.exists()) {
-      throw Exception('Audio file not found at path: $filePath');
+      throw const ServiceException(ServiceErrorCode.fileMissing);
     }
 
-    // Use user-supplied key, or fallback to the constant key in constants.dart
-    final String apiKey = (customApiKey != null && customApiKey.isNotEmpty)
-        ? customApiKey
-        : AppConstants.groqApiKey;
-
-    if (apiKey.startsWith('gsk_xxxxxx') || apiKey.isEmpty) {
-      throw Exception(
-        'No valid Groq API Key found.\n\n'
-        'To fix this:\n'
-        '1. Go to https://console.groq.com/keys\n'
-        '2. Create a free API key\n'
-        '3. Paste it in Settings → "Custom Groq API Key"\n'
-        '4. Tap SAVE API KEY'
-      );
+    // Check file size before uploading
+    final int fileSizeBytes = await audioFile.length();
+    if (fileSizeBytes > _config.api.maxFileSizeBytes) {
+      throw const ServiceException(ServiceErrorCode.fileTooLarge);
     }
+
+    // Resolve API Key: custom key supplied, or secure storage / dart-define fallback
+    String? apiKey = customApiKey?.trim();
+    if (apiKey == null || apiKey.isEmpty) {
+      apiKey = await _secretsService.getGroqApiKey();
+    }
+
+    if (apiKey == null || apiKey.isEmpty) {
+      throw const ServiceException(ServiceErrorCode.noApiKey);
+    }
+
+    final languageConfig = _config.findLanguage(languageCode);
 
     try {
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse(AppConstants.groqWhisperUrl),
+        Uri.parse(_config.api.groqWhisperUrl),
       );
       request.headers['Authorization'] = 'Bearer $apiKey';
 
@@ -45,74 +60,71 @@ class WhisperService {
         await http.MultipartFile.fromPath('file', filePath),
       );
 
-      // Model: whisper-large-v3 — best accuracy for multilingual audio
-      request.fields['model'] = 'whisper-large-v3';
+      request.fields['model'] = _config.api.whisperModel;
+      request.fields['temperature'] = _config.api.temperature.toString();
+      request.fields['response_format'] = _config.api.responseFormat;
+      request.fields['prompt'] = languageConfig.whisperPrompt;
 
-      // Temperature 0 = most deterministic & accurate transcription
-      request.fields['temperature'] = '0';
-
-      // verbose_json returns richer data including the full text
-      request.fields['response_format'] = 'verbose_json';
-
-      // Guide the model based on the selected language for maximum accuracy
-      if (languageCode == 'bilingual') {
-        // Do NOT set 'language' — let Whisper auto-detect for mixed speech
-        request.fields['prompt'] = 
-          'Transcribe this audio accurately. '
-          'The speaker uses mixed Tamil (தமிழ்) and English. '
-          'Preserve the original words exactly as spoken. '
-          'Use proper punctuation and formatting.';
-      } else if (languageCode == 'ta-IN') {
-        request.fields['language'] = 'ta';
-        request.fields['prompt'] = 
-          'இது ஒரு தமிழ் உரையாடல். '
-          'அனைத்து வார்த்தைகளையும் துல்லியமாக எழுதவும்.';
-      } else {
-        request.fields['language'] = 'en';
-        request.fields['prompt'] = 
-          'Transcribe this English audio accurately with proper punctuation and formatting.';
+      if (languageConfig.whisperLanguage != null) {
+        request.fields['language'] = languageConfig.whisperLanguage!;
       }
 
-      // Send the request with a generous timeout for large files
-      final streamedResponse = await request.send().timeout(
-        const Duration(minutes: 5),
+      final http.StreamedResponse streamedResponse = await _client
+          .send(request)
+          .timeout(
+        Duration(minutes: _config.api.timeoutMinutes),
         onTimeout: () {
-          throw Exception('Transcription timed out. The audio file may be too long. Please try a shorter file.');
+          throw const ServiceException(ServiceErrorCode.timeout);
         },
       );
 
       final responseBody = await streamedResponse.stream.bytesToString();
 
       if (streamedResponse.statusCode == 200) {
-        final decodedData = json.decode(responseBody);
-        // verbose_json format returns 'text' at the top level
-        final String text = decodedData['text'] ?? '';
-        return text.trim();
+        final dynamic decodedData = json.decode(responseBody);
+        if (decodedData is Map<String, dynamic>) {
+          final String text = (decodedData['text'] as String?)?.trim() ?? '';
+          if (text.isEmpty) {
+            throw const ServiceException(ServiceErrorCode.emptyResult);
+          }
+          return text;
+        }
+        throw const ServiceException(ServiceErrorCode.emptyResult);
       } else if (streamedResponse.statusCode == 401) {
-        throw Exception(
-          'Invalid API Key. Please check your Groq API Key in Settings.\n'
-          'Get a free key at https://console.groq.com/keys'
-        );
+        throw const ServiceException(ServiceErrorCode.invalidApiKey);
       } else if (streamedResponse.statusCode == 413) {
-        throw Exception('Audio file is too large for the API. Maximum size is 25MB.');
+        throw const ServiceException(ServiceErrorCode.fileTooLarge);
+      } else if (streamedResponse.statusCode == 429) {
+        throw const ServiceException(ServiceErrorCode.rateLimited);
+      } else if (streamedResponse.statusCode >= 500) {
+        throw ServiceException(
+          ServiceErrorCode.server,
+          'HTTP ${streamedResponse.statusCode}: $responseBody',
+        );
       } else {
-        final error = json.decode(responseBody);
-        final String errorMsg = error['error']?['message'] ?? 'Unknown API error (${streamedResponse.statusCode})';
-        throw Exception('Transcription failed: $errorMsg');
+        throw ServiceException(
+          ServiceErrorCode.unknown,
+          'HTTP ${streamedResponse.statusCode}: $responseBody',
+        );
       }
-    } on Exception {
+    } on ServiceException {
       rethrow;
+    } on SocketException catch (e) {
+      throw ServiceException(ServiceErrorCode.network, e.message);
+    } on http.ClientException catch (e) {
+      throw ServiceException(ServiceErrorCode.network, e.message);
+    } on TimeoutException {
+      throw const ServiceException(ServiceErrorCode.timeout);
     } catch (e) {
-      throw Exception('Whisper Transcription Error: $e');
+      throw ServiceException(ServiceErrorCode.unknown, e.toString());
     }
   }
 
-  /// Check if a valid API key is configured.
-  /// Returns true if a usable key exists, false otherwise.
-  static Future<bool> hasValidApiKey(String? customApiKey) async {
-    final String apiKey = (customApiKey != null && customApiKey.isNotEmpty)
-        ? customApiKey
-        : AppConstants.groqApiKey;
-    return apiKey.isNotEmpty && !apiKey.startsWith('gsk_xxxxxx');
+  /// Verifies if a usable API key is configured.
+  Future<bool> hasValidApiKey([String? customApiKey]) async {
+    if (customApiKey != null && customApiKey.trim().isNotEmpty) {
+      return true;
+    }
+    return _secretsService.hasValidApiKey();
   }
 }

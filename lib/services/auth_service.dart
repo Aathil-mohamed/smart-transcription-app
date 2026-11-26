@@ -1,11 +1,20 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
-import '../core/constants/app_constants.dart';
+import '../core/config/app_config.dart';
+import '../core/errors/service_error.dart';
 
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AppConfig _config;
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
+
+  AuthService(
+    this._config, {
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   // Stream to listen to Authentication State changes
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -49,7 +58,7 @@ class AuthService {
       );
 
       await _firestore
-          .collection(AppConstants.collectionUsers)
+          .collection(_config.firestore.collectionUsers)
           .doc(uid)
           .set(userModel.toMap());
 
@@ -62,13 +71,13 @@ class AuthService {
   // Fetch User Details from Firestore
   Future<UserModel?> getUserDetails(String uid) async {
     try {
-      final doc = await _firestore.collection(AppConstants.collectionUsers).doc(uid).get();
+      final doc = await _firestore.collection(_config.firestore.collectionUsers).doc(uid).get();
       if (doc.exists) {
         return UserModel.fromDocument(doc);
       }
       return null;
     } catch (e) {
-      throw Exception('Failed to fetch user details: $e');
+      throw DataException('getUserDetails', e);
     }
   }
 
@@ -85,11 +94,11 @@ class AuthService {
       case 'wrong-password':
         return 'Wrong password provided for that user.';
       case 'email-already-in-use':
-        return 'The email account already exists.';
+        return 'The account already exists for that email.';
       case 'invalid-email':
-        return 'The email address is invalid.';
+        return 'The email address is badly formatted.';
       case 'weak-password':
-        return 'The password provided is too weak.';
+        return 'The password is too weak.';
       default:
         return e.message ?? 'An unknown authentication error occurred.';
     }

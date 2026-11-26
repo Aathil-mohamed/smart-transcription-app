@@ -104,6 +104,18 @@ abstract class AppLocalizations {
   /// **'Smart Transcription System'**
   String get appTitle;
 
+  /// No description provided for @apiKeyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Groq API Key'**
+  String get apiKeyLabel;
+
+  /// No description provided for @apiKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste your API key here'**
+  String get apiKeyHint;
+
   /// No description provided for @errorNoApiKey.
   ///
   /// In en, this message translates to:

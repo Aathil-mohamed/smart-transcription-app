@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
+import '../core/config/app_config.dart';
 
 // Service provider
-final authServiceProvider = Provider<AuthService>((ref) => AuthService());
+final authServiceProvider = Provider<AuthService>((ref) => AuthService(ref.watch(appConfigProvider)));
 
 // Authentication state stream provider (listens directly to Firebase Auth changes)
 final authStateProvider = StreamProvider<User?>((ref) {

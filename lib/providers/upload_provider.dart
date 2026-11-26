@@ -2,14 +2,15 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/config/app_config.dart';
+import '../core/errors/service_error.dart';
 import '../models/transcript.dart';
 import '../providers/auth_provider.dart';
-import '../providers/record_provider.dart'; // contains service providers
-import '../services/whisper_service.dart';
+import '../providers/record_provider.dart';
+import '../services/secrets_service.dart';
 
 enum UploadStatus { idle, picking, transcribing, saving, success, error }
 
@@ -17,7 +18,7 @@ class UploadState {
   final UploadStatus status;
   final String progressText;
   final String? errorMessage;
-  final String? transcriptionId; // Returns the ID on success
+  final String? transcriptionId;
 
   UploadState({
     required this.status,
@@ -64,28 +65,24 @@ class UploadNotifier extends StateNotifier<UploadState> {
     String? tempUploadPath;
 
     try {
-      // 0. First, check that a valid Groq API key is configured
-      final prefs = await SharedPreferences.getInstance();
-      final customApiKey = prefs.getString('groq_api_key_custom');
-      final bool hasKey = await WhisperService.hasValidApiKey(customApiKey);
+      // 0. Check that a valid Groq API key is configured
+      final bool hasKey = await _ref.read(secretsServiceProvider).hasValidApiKey();
 
       if (!hasKey) {
         state = state.copyWith(
           status: UploadStatus.error,
           errorMessage:
-            'No Groq API Key configured!\n\n'
-            'To enable accurate transcription:\n'
-            '1. Go to https://console.groq.com/keys\n'
-            '2. Create a FREE API key\n'
-            '3. Open Settings (⚙️) in this app\n'
-            '4. Paste the key under "Custom Groq API Key"\n'
-            '5. Tap SAVE API KEY\n\n'
-            'Then try uploading again.',
+              'No Groq API Key configured!\n\n'
+              'To enable transcription:\n'
+              '1. Open Settings in this app\n'
+              '2. Enter your API key under "Enter Groq API Key"\n'
+              '3. Tap SAVE API KEY\n\n'
+              'Then try uploading again.',
         );
         return;
       }
 
-      // 1. Pick audio file (using FileType.audio to support all registered formats like AMR, Opus, etc.)
+      // 1. Pick audio file
       state = state.copyWith(progressText: 'Opening file picker...');
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.audio,
@@ -102,36 +99,19 @@ class UploadNotifier extends StateNotifier<UploadState> {
       if (path == null) {
         state = state.copyWith(
           status: UploadStatus.error,
-          errorMessage: 'Could not access file path. Please try another file.',
+          errorMessage: 'Could not access the selected file.',
         );
         return;
       }
 
-      // Check size limit: Groq supports up to 25MB
-      final int sizeLimit = 25 * 1024 * 1024;
-      if (file.size > sizeLimit) {
-        state = state.copyWith(
-          status: UploadStatus.error,
-          errorMessage: 'File is too large. Maximum supported size is 25MB.',
-        );
-        return;
-      }
-
-      // Resolve file path for upload.
-      // Groq Gateway natively allows: mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm, flac, opus.
-      // If the picked file is AMR, 3GP, CAF, etc., we copy it to a temp file with a '.wav' extension.
-      // This bypasses the gateway file-type checks, and the underlying Whisper decoder (which uses FFmpeg)
-      // auto-sniffs the file header and decodes it correctly!
       String uploadPath = path;
-      final String ext = (file.extension ?? path.split('.').last).toLowerCase();
-      final List<String> nativelySupported = [
-        'mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'webm', 'mp4', 'mpeg', 'mpga'
-      ];
 
-      if (!nativelySupported.contains(ext)) {
+      // Handle common extension issues if any
+      final String extension = file.extension?.toLowerCase() ?? '';
+      if (['aac', 'amr', 'opus'].contains(extension)) {
         try {
           final directory = await getTemporaryDirectory();
-          final String tempFileName = 'compat_${DateTime.now().millisecondsSinceEpoch}.wav';
+          final String tempFileName = 'temp_compat_${DateTime.now().millisecondsSinceEpoch}.$extension';
           tempUploadPath = '${directory.path}/$tempFileName';
           final File originalFile = File(path);
           await originalFile.copy(tempUploadPath);
@@ -152,10 +132,9 @@ class UploadNotifier extends StateNotifier<UploadState> {
       final transcribedText = await whisperService.transcribeAudio(
         filePath: uploadPath,
         languageCode: languageCode,
-        customApiKey: customApiKey,
       );
 
-      // Try to clean up temporary file
+      // Clean up temporary file
       if (tempUploadPath != null) {
         try {
           final tempFile = File(tempUploadPath);
@@ -191,19 +170,16 @@ class UploadNotifier extends StateNotifier<UploadState> {
       }
 
       final String docId = const Uuid().v4();
-
-      // Resolve language name based on languageCode
-      String langName = 'Bilingual';
-      if (languageCode == 'ta-IN') langName = 'Tamil';
-      if (languageCode == 'en-US') langName = 'English';
+      final config = _ref.read(appConfigProvider);
+      final langConfig = config.findLanguage(languageCode);
 
       final transcription = TranscriptionModel(
         transcriptionId: docId,
         userId: currentUserId,
         title: 'Uploaded Audio - ${file.name}',
         transcript: transcribedText,
-        language: langName,
-        duration: 0, // 0 signifies uploaded file duration unknown
+        language: langConfig.displayName,
+        duration: 0,
         createdAt: DateTime.now(),
       );
 
@@ -214,8 +190,7 @@ class UploadNotifier extends StateNotifier<UploadState> {
         progressText: 'Success!',
         transcriptionId: docId,
       );
-    } catch (e) {
-      // Clean up temp file on failure
+    } on ServiceException catch (e) {
       if (tempUploadPath != null) {
         try {
           final tempFile = File(tempUploadPath);
@@ -224,10 +199,22 @@ class UploadNotifier extends StateNotifier<UploadState> {
           }
         } catch (_) {}
       }
-
       state = state.copyWith(
         status: UploadStatus.error,
-        errorMessage: e.toString().replaceAll('Exception: ', ''),
+        errorMessage: 'Transcription failed: ${e.code.name}${e.technicalDetails != null ? ' (${e.technicalDetails})' : ''}',
+      );
+    } catch (e) {
+      if (tempUploadPath != null) {
+        try {
+          final tempFile = File(tempUploadPath);
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        } catch (_) {}
+      }
+      state = state.copyWith(
+        status: UploadStatus.error,
+        errorMessage: 'An unexpected error occurred during upload: $e',
       );
     }
   }

@@ -12,8 +12,14 @@ class AppLocalizationsTa extends AppLocalizations {
   String get appTitle => 'ஸ்மார்ட் டிரான்ஸ்கிரிப்ஷன் சிஸ்டம்';
 
   @override
+  String get apiKeyLabel => 'Groq API விசையை உள்ளிடவும்';
+
+  @override
+  String get apiKeyHint => 'உங்கள் API விசையை இங்கே ஒட்டவும்';
+
+  @override
   String get errorNoApiKey =>
-      'Groq API விசை உள்ளமைக்கப்படவில்லை. அமைப்புகள் அல்லது சூழலில் உங்கள் API விசையை அமைக்கவும்.';
+      'Groq API விசை உள்ளமைக்கப்படவில்லை. அமைப்புகளில் உங்கள் API விசையை அமைக்கவும்.';
 
   @override
   String get errorInvalidApiKey =>
@@ -21,23 +27,22 @@ class AppLocalizationsTa extends AppLocalizations {
 
   @override
   String get errorFileTooLarge =>
-      'ஆடியோ கோப்பு மிக பெரியதாக உள்ளது (அதிகபட்சம் 25 MB).';
+      'ஆடியோ கோப்பு டிரான்ஸ்கிரிப்ஷனுக்கு மிகவும் பெரியது (அதிகபட்சம் 25 MB).';
 
   @override
   String get errorRateLimited =>
-      'API விகித வரம்பு எட்டப்பட்டது. சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.';
+      'API வரம்பு அடைந்தது. சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.';
 
   @override
   String get errorTimeout =>
-      'செயல்பாட்டு நேரம் முடிந்தது. குறுகிய ஆடியோ மூலம் மீண்டும் முயற்சிக்கவும்.';
+      'செயல்பாட்டின் நேரம் முடிந்தது. குறுகிய ஆடியோவுடன் மீண்டும் முயற்சிக்கவும்.';
 
   @override
-  String get errorNetwork =>
-      'நெட்வொர்க் இணைப்பு தோல்வியடைந்தது. உங்கள் இணைய இணைப்பைச் சரிபார்க்கவும்.';
+  String get errorNetwork => 'நெட்வொர்க் பிழை. இணைய இணைப்பைச் சரிபார்க்கவும்.';
 
   @override
   String get errorServer =>
-      'டிரான்ஸ்கிரிப்ஷன் சர்வர் பிழை ஏற்பட்டது. பின்னர் முயற்சிக்கவும்.';
+      'சர்வர் பிழை ஏற்பட்டது. பின்னர் மீண்டும் முயற்சிக்கவும்.';
 
   @override
   String get errorEmptyResult =>

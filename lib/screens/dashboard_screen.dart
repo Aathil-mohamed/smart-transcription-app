@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/config/app_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/record_provider.dart';
 import '../providers/upload_provider.dart';
-import '../core/constants/app_constants.dart';
 import 'recorder_screen.dart';
 import 'saved_list_screen.dart';
 import 'details_screen.dart';
@@ -121,7 +121,7 @@ class DashboardScreen extends ConsumerWidget {
                      return const SizedBox.shrink();
                    }
                    final key = snapshot.data ?? '';
-                   final isValid = key.isNotEmpty && !key.startsWith('gsk_xxxxxx');
+                   final isValid = key.isNotEmpty;
                    if (isValid) return const SizedBox.shrink();
 
                    return Container(
@@ -562,10 +562,10 @@ class DashboardScreen extends ConsumerWidget {
                         value: selectedLang,
                         isExpanded: true,
                         dropdownColor: theme.colorScheme.surface,
-                        items: AppConstants.supportedLanguages.map((lang) {
+                        items: ref.watch(appConfigProvider).languages.map((lang) {
                           return DropdownMenuItem<String>(
-                            value: lang['code']!,
-                            child: Text(lang['name']!),
+                            value: lang.code,
+                            child: Text(lang.name),
                           );
                         }).toList(),
                         onChanged: (val) {

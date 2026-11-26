@@ -1,9 +1,14 @@
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_error.dart';
+import '../core/config/app_config.dart';
 
 class SpeechService {
-  final stt.SpeechToText _speech = stt.SpeechToText();
+  final AppConfig? _config;
+  final stt.SpeechToText _speech;
   bool _isAvailable = false;
+
+  SpeechService([this._config, stt.SpeechToText? speech])
+      : _speech = speech ?? stt.SpeechToText();
 
   bool get isAvailable => _isAvailable;
   bool get isListening => _speech.isListening;
@@ -33,25 +38,29 @@ class SpeechService {
   }) async {
     if (!_isAvailable) return;
 
-    // Determine target locale ID.
-    // If user selects 'Bilingual', we run under 'ta-IN' since Google/Apple
-    // speech services under Indian Tamil locale support English code-switching.
+    // Determine target locale ID from language config if available
     String finalLocale = localeId;
-    if (localeId == 'bilingual') {
+    if (_config != null) {
+      final langConfig = _config.findLanguage(localeId);
+      finalLocale = langConfig.sttLocale;
+    } else if (localeId == 'bilingual') {
       finalLocale = 'ta-IN';
     }
+
+    final listenForHours = _config?.speechToText.listenForHours ?? 1;
+    final pauseForSeconds = _config?.speechToText.pauseForSeconds ?? 10;
 
     await _speech.listen(
       onResult: (result) {
         onResult(result.recognizedWords);
       },
       listenOptions: stt.SpeechListenOptions(
-        partialResults: true,    // Show live words dynamically as user speaks
+        partialResults: true,
         cancelOnError: false,
         listenMode: stt.ListenMode.dictation,
         localeId: finalLocale,
-        listenFor: const Duration(hours: 1), // Listen long-term
-        pauseFor: const Duration(seconds: 10), // Pause detection buffer
+        listenFor: Duration(hours: listenForHours),
+        pauseFor: Duration(seconds: pauseForSeconds),
       ),
     );
   }

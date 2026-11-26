@@ -1,11 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/config/app_config.dart';
 import '../models/transcript.dart';
 import '../services/export_service.dart';
 
 // Provider for ExportService
-final exportServiceProvider = Provider<ExportService>((ref) => ExportService());
+final exportServiceProvider = Provider<ExportService>((ref) {
+  final config = ref.watch(appConfigProvider);
+  return ExportService(config);
+});
 
 class ExportScreen extends ConsumerStatefulWidget {
   final TranscriptionModel transcription;

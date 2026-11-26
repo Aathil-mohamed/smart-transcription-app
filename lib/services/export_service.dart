@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -10,17 +11,26 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import '../models/transcript.dart';
 import '../models/export.dart';
-import '../core/constants/app_constants.dart';
+import '../core/config/app_config.dart';
+import '../core/errors/service_error.dart';
 
 class ExportService {
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AppConfig _config;
+  final FirebaseStorage _storage;
+  final FirebaseFirestore _firestore;
+
+  ExportService(
+    this._config, {
+    FirebaseStorage? storage,
+    FirebaseFirestore? firestore,
+  })  : _storage = storage ?? FirebaseStorage.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   // 1. Generate Plain Text File (.txt)
   Future<File> generateTxt(TranscriptionModel transcription) async {
     final String cleanTitle = transcription.title.replaceAll(RegExp(r'[^\w\s\-]'), '_');
     final directory = await getTemporaryDirectory();
-    final filePath = '${directory.path}/$cleanTitle.txt';
+    final filePath = p.join(directory.path, '$cleanTitle.txt');
     final file = File(filePath);
 
     final String content = '''
@@ -43,21 +53,17 @@ ${transcription.transcript}
     final pdf = pw.Document();
     final String cleanTitle = transcription.title.replaceAll(RegExp(r'[^\w\s\-]'), '_');
     final directory = await getTemporaryDirectory();
-    final filePath = '${directory.path}/$cleanTitle.pdf';
+    final filePath = p.join(directory.path, '$cleanTitle.pdf');
 
     // Tamil Unicode Font Support:
-    // Standard PDF fonts (Helvetica, Times) do not support Tamil characters.
-    // We download Noto Sans Tamil dynamically from Google Fonts to render Tamil text correctly.
     pw.Font? tamilFont;
     try {
-      final fontUrl = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansTamil/NotoSansTamil-Regular.ttf';
+      final fontUrl = _config.export.pdfFontUrl;
       final response = await http.get(Uri.parse(fontUrl));
       if (response.statusCode == 200) {
         tamilFont = pw.Font.ttf(ByteData.view(response.bodyBytes.buffer));
       }
     } catch (e) {
-      // Fallback - if offline or download fails, we fall back to standard Helvetica,
-      // but warn that Tamil letters might not render.
       debugPrint("Warning: Failed to load Tamil font, falling back: $e");
     }
 
@@ -80,8 +86,8 @@ ${transcription.transcript}
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('Smart Transcription System', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-                  pw.Text(transcription.createdAt.toString().split(' ')[0], style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                  pw.Text('Smart Transcription System', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                  pw.Text(transcription.createdAt.toString().split(' ')[0], style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
                 ],
               ),
             ),
@@ -126,20 +132,17 @@ ${transcription.transcript}
   }
 
   // 3. Generate Word Document (.doc / .docx representation)
-  // We use RTF (Rich Text Format) structure renamed as .doc, which Word/Docs opens natively.
   Future<File> generateDocx(TranscriptionModel transcription) async {
     final String cleanTitle = transcription.title.replaceAll(RegExp(r'[^\w\s\-]'), '_');
     final directory = await getTemporaryDirectory();
-    final filePath = '${directory.path}/$cleanTitle.doc';
+    final filePath = p.join(directory.path, '$cleanTitle.doc');
     final file = File(filePath);
 
     // RTF Document Structure with Unicode support
-    final rtfHeader = r'{\rtf1\ansi\deff0 {\fonttbl {\f0\fnil\fcharset0 Arial;}{\f1\fnil\fcharset0 Noto Sans Tamil;}}\viewkind4\uc1\pard\lang1033';
+    const rtfHeader = r'{\rtf1\ansi\deff0 {\fonttbl {\f0\fnil\fcharset0 Arial;}{\f1\fnil\fcharset0 Noto Sans Tamil;}}\viewkind4\uc1\pard\lang1033';
     final rtfTitle = '\\f0\\fs40\\b ${transcription.title}\\b0\\fs24\\par\\par';
     final rtfMeta = '\\f0\\fs20\\i Language: ${transcription.language} | Duration: ${transcription.duration}s\\i0\\fs24\\par\\par';
     
-    // We convert Tamil characters into Unicode RTF escape sequences (\uXXXX?)
-    // to ensure they open correctly on all operating systems.
     final String bodyText = transcription.transcript;
     final StringBuffer rtfBody = StringBuffer();
     for (int i = 0; i < bodyText.length; i++) {
@@ -164,15 +167,20 @@ ${transcription.transcript}
     required String fileType,
   }) async {
     try {
-      final fileName = file.path.split('/').last;
+      final fileName = p.basename(file.path);
+      final storagePath = _config.storage.buildExportPath(
+        userId: userId,
+        transcriptionId: transcriptionId,
+        fileName: fileName,
+      );
       
       // 1. Upload to Firebase Storage
-      final ref = _storage.ref().child('users/$userId/exports/$transcriptionId/$fileName');
+      final ref = _storage.ref().child(storagePath);
       final uploadTask = await ref.putFile(file);
       final downloadUrl = await uploadTask.ref.getDownloadURL();
 
       // 2. Log in Firestore Exports collection
-      final exportId = _firestore.collection(AppConstants.collectionExports).doc().id;
+      final exportId = _firestore.collection(_config.firestore.collectionExports).doc().id;
       final exportModel = ExportModel(
         exportId: exportId,
         transcriptionId: transcriptionId,
@@ -183,13 +191,13 @@ ${transcription.transcript}
       );
 
       await _firestore
-          .collection(AppConstants.collectionExports)
+          .collection(_config.firestore.collectionExports)
           .doc(exportId)
           .set(exportModel.toMap());
 
       return downloadUrl;
     } catch (e) {
-      throw Exception('Failed to upload export to storage: $e');
+      throw DataException('uploadExportToStorage', e);
     }
   }
 
@@ -203,7 +211,7 @@ ${transcription.transcript}
         ),
       );
     } catch (e) {
-      throw Exception('Failed to share file: $e');
+      throw ServiceException(ServiceErrorCode.unknown, 'Failed to share file: $e');
     }
   }
 }
