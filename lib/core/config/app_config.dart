@@ -40,7 +40,7 @@ class ApiConfig {
       responseFormat: json['responseFormat'] as String,
       maxFileSizeBytes: (json['maxFileSizeBytes'] as num).toInt(),
       timeoutMinutes: (json['timeoutMinutes'] as num).toInt(),
-      retries: (json['retries'] as num?)?.toInt() ?? 2,
+      retries: (json['retries'] as num?)?.toInt() ?? 3,
       retryStatuses: (json['retryStatuses'] as List<dynamic>?)
               ?.map((e) => (e as num).toInt())
               .toList() ??
@@ -54,19 +54,17 @@ class ProviderConfig {
   final String model;
   final double temperature;
   final String responseFormat;
+  final String timestampGranularities;
   final int timeoutSeconds;
-  final int retries;
-  final List<int> retryStatuses;
   final int maxUploadBytes;
 
   const ProviderConfig({
     required this.baseUrl,
     required this.model,
     required this.temperature,
-    required this.responseFormat,
+    this.responseFormat = 'verbose_json',
+    this.timestampGranularities = 'segment',
     required this.timeoutSeconds,
-    required this.retries,
-    required this.retryStatuses,
     required this.maxUploadBytes,
   });
 
@@ -75,10 +73,7 @@ class ProviderConfig {
       'baseUrl',
       'model',
       'temperature',
-      'responseFormat',
       'timeoutSeconds',
-      'retries',
-      'retryStatuses',
       'maxUploadBytes',
     ], 'ProviderConfig');
 
@@ -86,28 +81,107 @@ class ProviderConfig {
       baseUrl: json['baseUrl'] as String,
       model: json['model'] as String,
       temperature: (json['temperature'] as num).toDouble(),
-      responseFormat: json['responseFormat'] as String,
+      responseFormat: json['responseFormat'] as String? ?? 'verbose_json',
+      timestampGranularities: json['timestampGranularities'] as String? ?? 'segment',
       timeoutSeconds: (json['timeoutSeconds'] as num).toInt(),
-      retries: (json['retries'] as num).toInt(),
-      retryStatuses: (json['retryStatuses'] as List<dynamic>)
-          .map((e) => (e as num).toInt())
-          .toList(),
       maxUploadBytes: (json['maxUploadBytes'] as num).toInt(),
     );
   }
 }
 
+class QualityFilterConfig {
+  final double maxNoSpeechProb;
+  final double minAvgLogprob;
+  final double maxCompressionRatio;
+  final bool dropConsecutiveDuplicates;
+
+  const QualityFilterConfig({
+    required this.maxNoSpeechProb,
+    required this.minAvgLogprob,
+    required this.maxCompressionRatio,
+    required this.dropConsecutiveDuplicates,
+  });
+
+  factory QualityFilterConfig.fromJson(Map<String, dynamic> json) {
+    _requireKeys(json, [
+      'maxNoSpeechProb',
+      'minAvgLogprob',
+      'maxCompressionRatio',
+      'dropConsecutiveDuplicates',
+    ], 'QualityFilterConfig');
+
+    return QualityFilterConfig(
+      maxNoSpeechProb: (json['maxNoSpeechProb'] as num).toDouble(),
+      minAvgLogprob: (json['minAvgLogprob'] as num).toDouble(),
+      maxCompressionRatio: (json['maxCompressionRatio'] as num).toDouble(),
+      dropConsecutiveDuplicates: json['dropConsecutiveDuplicates'] as bool,
+    );
+  }
+}
+
+class RetryConfig {
+  final int maxRetries;
+  final int initialBackoffMs;
+  final int maxBackoffMs;
+  final double backoffMultiplier;
+  final List<int> retryStatuses;
+  final int maxRetryAfterSeconds;
+
+  const RetryConfig({
+    required this.maxRetries,
+    required this.initialBackoffMs,
+    required this.maxBackoffMs,
+    required this.backoffMultiplier,
+    required this.retryStatuses,
+    required this.maxRetryAfterSeconds,
+  });
+
+  factory RetryConfig.fromJson(Map<String, dynamic> json) {
+    _requireKeys(json, [
+      'maxRetries',
+      'initialBackoffMs',
+      'maxBackoffMs',
+      'backoffMultiplier',
+      'retryStatuses',
+      'maxRetryAfterSeconds',
+    ], 'RetryConfig');
+
+    return RetryConfig(
+      maxRetries: (json['maxRetries'] as num).toInt(),
+      initialBackoffMs: (json['initialBackoffMs'] as num).toInt(),
+      maxBackoffMs: (json['maxBackoffMs'] as num).toInt(),
+      backoffMultiplier: (json['backoffMultiplier'] as num).toDouble(),
+      retryStatuses: (json['retryStatuses'] as List<dynamic>)
+          .map((e) => (e as num).toInt())
+          .toList(),
+      maxRetryAfterSeconds: (json['maxRetryAfterSeconds'] as num).toInt(),
+    );
+  }
+}
+
 class TranscriptionConfig {
-  final String defaultProvider;
+  final List<String> pipeline;
+  final int maxPromptLengthChars;
   final Map<String, ProviderConfig> providers;
+  final QualityFilterConfig qualityFilter;
+  final RetryConfig retry;
 
   const TranscriptionConfig({
-    required this.defaultProvider,
+    required this.pipeline,
+    required this.maxPromptLengthChars,
     required this.providers,
+    required this.qualityFilter,
+    required this.retry,
   });
 
   factory TranscriptionConfig.fromJson(Map<String, dynamic> json) {
-    _requireKeys(json, ['defaultProvider', 'providers'], 'TranscriptionConfig');
+    _requireKeys(json, [
+      'pipeline',
+      'maxPromptLengthChars',
+      'providers',
+      'qualityFilter',
+      'retry',
+    ], 'TranscriptionConfig');
 
     final rawProviders = json['providers'] as Map<String, dynamic>;
     final parsedProviders = <String, ProviderConfig>{};
@@ -117,8 +191,13 @@ class TranscriptionConfig {
     }
 
     return TranscriptionConfig(
-      defaultProvider: json['defaultProvider'] as String,
+      pipeline: (json['pipeline'] as List<dynamic>).map((e) => e as String).toList(),
+      maxPromptLengthChars: (json['maxPromptLengthChars'] as num).toInt(),
       providers: parsedProviders,
+      qualityFilter: QualityFilterConfig.fromJson(
+        json['qualityFilter'] as Map<String, dynamic>,
+      ),
+      retry: RetryConfig.fromJson(json['retry'] as Map<String, dynamic>),
     );
   }
 }
@@ -131,6 +210,7 @@ class AudioConfig {
   final bool noiseSuppress;
   final bool echoCancel;
   final bool autoGain;
+  final double safetyRatio;
   final String recordingsFolder;
   final int amplitudeIntervalMs;
   final int secondsIntervalMs;
@@ -148,6 +228,7 @@ class AudioConfig {
     required this.noiseSuppress,
     required this.echoCancel,
     required this.autoGain,
+    this.safetyRatio = 0.9,
     required this.recordingsFolder,
     required this.amplitudeIntervalMs,
     required this.secondsIntervalMs,
@@ -180,7 +261,8 @@ class AudioConfig {
       noiseSuppress: json['noiseSuppress'] as bool? ?? true,
       echoCancel: json['echoCancel'] as bool? ?? true,
       autoGain: json['autoGain'] as bool? ?? true,
-      recordingsFolder: json['recordingsFolder'] as String? ?? 'recordings',
+      safetyRatio: (json['safetyRatio'] as num?)?.toDouble() ?? 0.9,
+      recordingsFolder: json['recordingsFolder'] as String? ?? 'transcriptions',
       amplitudeIntervalMs: (json['amplitudeIntervalMs'] as num).toInt(),
       secondsIntervalMs: (json['secondsIntervalMs'] as num).toInt(),
       minDb: (json['minDb'] as num).toDouble(),
@@ -190,6 +272,12 @@ class AudioConfig {
       fileExtension: json['fileExtension'] as String,
     );
   }
+
+  /// Derives maximum safe recording duration in seconds based on max upload bytes and bitrate.
+  int calculateMaxDurationSeconds(int maxUploadBytes) {
+    if (bitRate <= 0) return 3600;
+    return ((maxUploadBytes * safetyRatio * 8) / bitRate).floor();
+  }
 }
 
 class SpeechToTextConfig {
@@ -197,12 +285,16 @@ class SpeechToTextConfig {
   final int pauseForSeconds;
   final String listenMode;
   final int restartDelayMs;
+  final int maxRestarts;
+  final bool enabledByDefault;
 
   const SpeechToTextConfig({
     required this.listenForHours,
     required this.pauseForSeconds,
     required this.listenMode,
     required this.restartDelayMs,
+    this.maxRestarts = 3,
+    this.enabledByDefault = true,
   });
 
   factory SpeechToTextConfig.fromJson(Map<String, dynamic> json) {
@@ -218,6 +310,8 @@ class SpeechToTextConfig {
       pauseForSeconds: (json['pauseForSeconds'] as num).toInt(),
       listenMode: json['listenMode'] as String,
       restartDelayMs: (json['restartDelayMs'] as num).toInt(),
+      maxRestarts: (json['maxRestarts'] as num?)?.toInt() ?? 3,
+      enabledByDefault: json['enabledByDefault'] as bool? ?? true,
     );
   }
 }
@@ -233,7 +327,11 @@ class LanguageConfig {
   final String sttLocale;
   final String? whisperLanguage;
   final String promptKey;
+  final String promptSampleSentence;
   final String whisperPrompt;
+  final List<String> allowedDetectedLanguages;
+  final String? retryLanguage;
+  final List<String> customVocabulary;
 
   const LanguageConfig({
     required this.id,
@@ -246,7 +344,11 @@ class LanguageConfig {
     required this.sttLocale,
     required this.whisperLanguage,
     required this.promptKey,
+    required this.promptSampleSentence,
     required this.whisperPrompt,
+    required this.allowedDetectedLanguages,
+    required this.retryLanguage,
+    required this.customVocabulary,
   });
 
   factory LanguageConfig.fromJson(Map<String, dynamic> json) {
@@ -261,6 +363,7 @@ class LanguageConfig {
     final code = json['code'] as String;
     final name = json['name'] as String;
     final displayName = json['displayName'] as String;
+    final sample = json['promptSampleSentence'] as String? ?? (json['whisperPrompt'] as String);
 
     return LanguageConfig(
       id: json['id'] as String? ?? code,
@@ -273,8 +376,34 @@ class LanguageConfig {
       sttLocale: json['sttLocale'] as String,
       whisperLanguage: json['whisperLanguage'] as String?,
       promptKey: json['promptKey'] as String? ?? '${code}_prompt',
+      promptSampleSentence: sample,
       whisperPrompt: json['whisperPrompt'] as String,
+      allowedDetectedLanguages: (json['allowedDetectedLanguages'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [code.split('-').first],
+      retryLanguage: json['retryLanguage'] as String?,
+      customVocabulary: (json['customVocabulary'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
     );
+  }
+
+  /// Builds prompt with sample sentence and vocabulary, truncating keeping the END of text.
+  String buildPrompt({
+    List<String>? additionalVocabulary,
+    int maxLength = 448,
+  }) {
+    final vocab = <String>{...customVocabulary, ...?additionalVocabulary};
+    final vocabString = vocab.isNotEmpty ? ' ${vocab.join(', ')}.' : '';
+    final combined = '$promptSampleSentence$vocabString'.trim();
+
+    if (combined.length <= maxLength) {
+      return combined;
+    }
+    // Truncate keeping the END of the text
+    return combined.substring(combined.length - maxLength);
   }
 }
 
@@ -342,11 +471,13 @@ class StorageConfig {
 class PreferencesConfig {
   final String keyThemeMode;
   final String keyUserLanguage;
+  final String keyLivePreviewEnabled;
   final String keyLegacyCustomApiKey;
 
   const PreferencesConfig({
     required this.keyThemeMode,
     required this.keyUserLanguage,
+    required this.keyLivePreviewEnabled,
     required this.keyLegacyCustomApiKey,
   });
 
@@ -360,6 +491,7 @@ class PreferencesConfig {
     return PreferencesConfig(
       keyThemeMode: json['keyThemeMode'] as String,
       keyUserLanguage: json['keyUserLanguage'] as String,
+      keyLivePreviewEnabled: json['keyLivePreviewEnabled'] as String? ?? 'live_preview_enabled',
       keyLegacyCustomApiKey: json['keyLegacyCustomApiKey'] as String,
     );
   }
@@ -446,7 +578,7 @@ class ExportConfig {
 
 class AppConfig {
   final ApiConfig api;
-  final TranscriptionConfig? transcription;
+  final TranscriptionConfig transcription;
   final AudioConfig audio;
   final SpeechToTextConfig speechToText;
   final List<LanguageConfig> languages;
@@ -458,7 +590,7 @@ class AppConfig {
 
   const AppConfig({
     required this.api,
-    this.transcription,
+    required this.transcription,
     required this.audio,
     required this.speechToText,
     required this.languages,
@@ -472,6 +604,7 @@ class AppConfig {
   factory AppConfig.fromJson(Map<String, dynamic> json) {
     _requireKeys(json, [
       'api',
+      'transcription',
       'audio',
       'speechToText',
       'languages',
@@ -484,9 +617,9 @@ class AppConfig {
 
     return AppConfig(
       api: ApiConfig.fromJson(json['api'] as Map<String, dynamic>),
-      transcription: json.containsKey('transcription')
-          ? TranscriptionConfig.fromJson(json['transcription'] as Map<String, dynamic>)
-          : null,
+      transcription: TranscriptionConfig.fromJson(
+        json['transcription'] as Map<String, dynamic>,
+      ),
       audio: AudioConfig.fromJson(json['audio'] as Map<String, dynamic>),
       speechToText: SpeechToTextConfig.fromJson(json['speechToText'] as Map<String, dynamic>),
       languages: (json['languages'] as List<dynamic>)
@@ -512,9 +645,9 @@ class AppConfig {
     }
   }
 
-  LanguageConfig findLanguage(String code) {
+  LanguageConfig findLanguage(String codeOrId) {
     return languages.firstWhere(
-      (lang) => lang.code == code,
+      (lang) => lang.code == codeOrId || lang.id == codeOrId,
       orElse: () => languages.first,
     );
   }

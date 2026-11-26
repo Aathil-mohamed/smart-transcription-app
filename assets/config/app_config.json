@@ -6,22 +6,43 @@
     "responseFormat": "verbose_json",
     "maxFileSizeBytes": 26214400,
     "timeoutMinutes": 5,
-    "retries": 2,
+    "retries": 3,
     "retryStatuses": [429, 500, 502, 503, 504]
   },
   "transcription": {
-    "defaultProvider": "groq",
+    "pipeline": ["groq", "gemini"],
+    "maxPromptLengthChars": 448,
     "providers": {
       "groq": {
         "baseUrl": "https://api.groq.com/openai/v1/audio/transcriptions",
         "model": "whisper-large-v3",
         "temperature": 0.0,
         "responseFormat": "verbose_json",
+        "timestampGranularities": "segment",
         "timeoutSeconds": 300,
-        "retries": 2,
-        "retryStatuses": [429, 500, 502, 503, 504],
         "maxUploadBytes": 26214400
+      },
+      "gemini": {
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",
+        "model": "gemini-1.5-flash",
+        "temperature": 0.0,
+        "timeoutSeconds": 180,
+        "maxUploadBytes": 20971520
       }
+    },
+    "qualityFilter": {
+      "maxNoSpeechProb": 0.6,
+      "minAvgLogprob": -1.0,
+      "maxCompressionRatio": 2.4,
+      "dropConsecutiveDuplicates": true
+    },
+    "retry": {
+      "maxRetries": 3,
+      "initialBackoffMs": 1000,
+      "maxBackoffMs": 10000,
+      "backoffMultiplier": 2.0,
+      "retryStatuses": [429, 500, 502, 503, 504],
+      "maxRetryAfterSeconds": 60
     }
   },
   "audio": {
@@ -32,7 +53,8 @@
     "noiseSuppress": true,
     "echoCancel": true,
     "autoGain": true,
-    "recordingsFolder": "recordings",
+    "safetyRatio": 0.9,
+    "recordingsFolder": "transcriptions",
     "amplitudeIntervalMs": 100,
     "secondsIntervalMs": 1000,
     "minDb": -160.0,
@@ -45,26 +67,32 @@
     "listenForHours": 1,
     "pauseForSeconds": 10,
     "listenMode": "dictation",
-    "restartDelayMs": 100
+    "restartDelayMs": 300,
+    "maxRestarts": 3,
+    "enabledByDefault": true
   },
   "languages": [
     {
       "id": "bilingual",
       "code": "bilingual",
-      "storedName": "Bilingual (Tamil + English)",
+      "storedName": "Bilingual",
       "name": "Bilingual (Tamil + English)",
       "uiLabel": "Bilingual",
       "displayName": "Bilingual",
       "speechLocale": "ta-IN",
       "sttLocale": "ta-IN",
-      "whisperLanguage": null,
+      "whisperLanguage": "ta",
       "promptKey": "bilingual_prompt",
-      "whisperPrompt": "Transcribe this audio accurately. The speaker uses mixed Tamil (தமிழ்) and English. Preserve the original words exactly as spoken. Use proper punctuation and formatting."
+      "promptSampleSentence": "வணக்கம், today we discuss the project update and next steps.",
+      "whisperPrompt": "வணக்கம், today we discuss the project update and next steps.",
+      "allowedDetectedLanguages": ["ta", "en"],
+      "retryLanguage": "ta",
+      "customVocabulary": ["Flutter", "Riverpod", "Groq", "Whisper", "Firestore", "Firebase"]
     },
     {
       "id": "ta-IN",
       "code": "ta-IN",
-      "storedName": "Tamil (தமிழ்)",
+      "storedName": "Tamil",
       "name": "Tamil (தமிழ்)",
       "uiLabel": "Tamil",
       "displayName": "Tamil",
@@ -72,12 +100,16 @@
       "sttLocale": "ta-IN",
       "whisperLanguage": "ta",
       "promptKey": "tamil_prompt",
-      "whisperPrompt": "இது ஒரு தமிழ் உரையாடல். அனைத்து வார்த்தைகளையும் துல்லியமாக எழுதவும்."
+      "promptSampleSentence": "வணக்கம், இன்றைய கூட்டத்தில் திட்டத்தின் முன்னேற்றம் பற்றி பேசுகிறோம்.",
+      "whisperPrompt": "வணக்கம், இன்றைய கூட்டத்தில் திட்டத்தின் முன்னேற்றம் பற்றி பேசுகிறோம்.",
+      "allowedDetectedLanguages": ["ta"],
+      "retryLanguage": "ta",
+      "customVocabulary": ["வணக்கம்", "செயலி", "பதிவு"]
     },
     {
       "id": "en-US",
       "code": "en-US",
-      "storedName": "English (United States)",
+      "storedName": "English",
       "name": "English (United States)",
       "uiLabel": "English",
       "displayName": "English",
@@ -85,7 +117,11 @@
       "sttLocale": "en-US",
       "whisperLanguage": "en",
       "promptKey": "english_prompt",
-      "whisperPrompt": "Transcribe this English audio accurately with proper punctuation and formatting."
+      "promptSampleSentence": "Hello, today we are discussing the project progress and next milestones.",
+      "whisperPrompt": "Hello, today we are discussing the project progress and next milestones.",
+      "allowedDetectedLanguages": ["en"],
+      "retryLanguage": "en",
+      "customVocabulary": ["transcription", "audio", "recording"]
     }
   ],
   "firestore": {
@@ -102,6 +138,7 @@
   "preferences": {
     "keyThemeMode": "theme_mode",
     "keyUserLanguage": "user_language",
+    "keyLivePreviewEnabled": "live_preview_enabled",
     "keyLegacyCustomApiKey": "groq_api_key_custom"
   },
   "secrets": {
