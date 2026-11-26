@@ -11,7 +11,7 @@
   },
   "transcription": {
     "pipeline": ["groq", "gemini"],
-    "maxPromptLengthChars": 448,
+    "maxPromptLengthChars": 200,
     "providers": {
       "groq": {
         "baseUrl": "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -24,7 +24,7 @@
       },
       "gemini": {
         "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",
-        "model": "gemini-1.5-flash",
+        "model": "gemini-2.5-flash",
         "temperature": 0.0,
         "timeoutSeconds": 180,
         "maxUploadBytes": 20971520
@@ -139,6 +139,7 @@
     "keyThemeMode": "theme_mode",
     "keyUserLanguage": "user_language",
     "keyLivePreviewEnabled": "live_preview_enabled",
+    "keyCustomVocabulary": "custom_vocabulary",
     "keyLegacyCustomApiKey": "groq_api_key_custom"
   },
   "secrets": {

@@ -41,3 +41,10 @@ flutter run -d chrome   # or -d windows or an Android device
 
 If you want, I can try generating `firebase_options.dart` here (requires the
 FlutterFire CLI) or run the app on an available device to verify connectivity.
+
+## AI Models Configuration
+
+Transcription models are configured centrally in `assets/config/app_config.json`. 
+
+> **Important Note on Gemini Model Availability**: Google Gemini model identifiers change as new versions release and older endpoints are sunset. Always verify the configured Gemini model (currently `gemini-2.5-flash`) against Google's current official model list. Do not hardcode model identifiers in source code.
+
