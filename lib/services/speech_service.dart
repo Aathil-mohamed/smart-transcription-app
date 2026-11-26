@@ -38,13 +38,10 @@ class SpeechService {
   }) async {
     if (!_isAvailable) return;
 
-    // Determine target locale ID from language config if available
     String finalLocale = localeId;
     if (_config != null) {
       final langConfig = _config.findLanguage(localeId);
-      finalLocale = langConfig.sttLocale;
-    } else if (localeId == 'bilingual') {
-      finalLocale = 'ta-IN';
+      finalLocale = langConfig.speechLocale;
     }
 
     final listenForHours = _config?.speechToText.listenForHours ?? 1;
