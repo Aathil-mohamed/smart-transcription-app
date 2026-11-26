@@ -119,3 +119,6 @@ $RECYCLE.BIN/
 *.crash
 *.stackdump
 migrate_working_dir/
+
+# Branding preview contact sheet (do not commit)
+assets/branding/preview.png
