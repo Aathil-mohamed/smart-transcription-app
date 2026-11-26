@@ -116,6 +116,42 @@ abstract class AppLocalizations {
   /// **'Paste your API key here'**
   String get apiKeyHint;
 
+  /// No description provided for @retryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcription Incomplete'**
+  String get retryTitle;
+
+  /// No description provided for @retryMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio was safely saved to your device, but transcription could not be completed. Would you like to retry?'**
+  String get retryMessage;
+
+  /// No description provided for @retryButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry Transcription'**
+  String get retryButton;
+
+  /// No description provided for @discardButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard Recording'**
+  String get discardButton;
+
+  /// No description provided for @maxDurationReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum recording duration reached. Finalizing recording...'**
+  String get maxDurationReached;
+
+  /// No description provided for @livePreviewUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Live speech preview is currently unavailable.'**
+  String get livePreviewUnavailable;
+
   /// No description provided for @errorNoApiKey.
   ///
   /// In en, this message translates to:

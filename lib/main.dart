@@ -7,17 +7,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'firebase_options.dart';
 import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/theme_provider.dart';
+import 'services/settings_repository.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load application configuration once at startup
+  // Load application configuration and preferences once at startup
   final appConfig = await AppConfig.loadFromAsset();
+  final prefs = await SharedPreferences.getInstance();
 
   // Initialize Firebase on supported platforms
   if (kIsWeb) {
@@ -59,6 +63,7 @@ void main() async {
     ProviderScope(
       overrides: [
         appConfigProvider.overrideWithValue(appConfig),
+        sharedPreferencesProvider.overrideWithValue(prefs),
       ],
       child: const MyApp(),
     ),

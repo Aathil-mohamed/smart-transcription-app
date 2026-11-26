@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/config/app_config.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/record_provider.dart';
 import '../widgets/waveform_painter.dart';
 
@@ -233,6 +234,50 @@ class RecorderScreen extends ConsumerWidget {
             Text(
               'Refining & Finalizing transcript...',
               style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (state.status == RecordStatus.retryRequired) {
+      final l10n = AppLocalizations.of(context);
+      return Center(
+        child: Column(
+          children: [
+            Text(
+              l10n?.retryTitle ?? 'Transcription Incomplete',
+              style: TextStyle(
+                color: theme.colorScheme.error,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n?.retryMessage ??
+                  'Audio was safely saved to your device, but transcription could not be completed. Would you like to retry?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton(
+                  onPressed: () => notifier.cancelRecording(),
+                  child: Text(l10n?.discardButton ?? 'Discard Recording'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: () => notifier.retryTranscription(),
+                  icon: const Icon(Icons.refresh),
+                  label: Text(l10n?.retryButton ?? 'Retry Transcription'),
+                ),
+              ],
             ),
           ],
         ),

@@ -1,29 +1,44 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
 import '../models/transcript.dart';
-import '../services/speech_service.dart';
-import '../services/whisper_service.dart';
 import '../services/firestore_service.dart';
+import '../services/live_preview_service.dart';
 import '../services/secrets_service.dart';
+import '../services/settings_repository.dart';
+import '../services/speech_service.dart';
+import '../services/transcription/transcription_pipeline.dart';
+import '../services/transcription/transcription_provider.dart';
+import '../services/whisper_service.dart';
 import 'auth_provider.dart';
 
-// Singletons for services
+final transcriptionPipelineProvider = Provider<TranscriptionPipeline>((ref) {
+  final config = ref.watch(appConfigProvider);
+  final secrets = ref.watch(secretsServiceProvider);
+  return TranscriptionPipeline.create(config, secrets);
+});
+
 final speechServiceProvider = Provider<SpeechService>((ref) {
   final config = ref.watch(appConfigProvider);
   return SpeechService(config);
 });
 
+final livePreviewServiceProvider = Provider<LivePreviewService>((ref) {
+  final config = ref.watch(appConfigProvider);
+  return LivePreviewService(config);
+});
+
 final whisperServiceProvider = Provider<WhisperService>((ref) {
   final config = ref.watch(appConfigProvider);
   final secrets = ref.watch(secretsServiceProvider);
-  return WhisperService(config, secrets);
+  final pipeline = ref.watch(transcriptionPipelineProvider);
+  return WhisperService(config, secrets, pipeline: pipeline);
 });
 
 final firestoreServiceProvider = Provider<FirestoreService>((ref) {
@@ -31,8 +46,7 @@ final firestoreServiceProvider = Provider<FirestoreService>((ref) {
   return FirestoreService(config);
 });
 
-// State Model for recording
-enum RecordStatus { idle, recording, paused, finalizing }
+enum RecordStatus { idle, recording, paused, finalizing, retryRequired }
 
 class RecordState {
   final RecordStatus status;
@@ -40,8 +54,11 @@ class RecordState {
   final double currentDb;
   final List<double> waveHistory;
   final int durationSecs;
-  final String selectedLanguageCode; // 'bilingual', 'ta-IN', 'en-US'
+  final int maxDurationSecs;
+  final String selectedLanguageCode;
   final String? errorMessage;
+  final String? failedAudioPath;
+  final bool canRetry;
 
   RecordState({
     required this.status,
@@ -49,18 +66,24 @@ class RecordState {
     required this.currentDb,
     required this.waveHistory,
     required this.durationSecs,
+    required this.maxDurationSecs,
     required this.selectedLanguageCode,
     this.errorMessage,
+    this.failedAudioPath,
+    this.canRetry = false,
   });
 
-  factory RecordState.initial() {
+  factory RecordState.initial([int maxDurationSecs = 3600]) {
     return RecordState(
       status: RecordStatus.idle,
       liveText: '',
       currentDb: -160.0,
       waveHistory: const [],
       durationSecs: 0,
+      maxDurationSecs: maxDurationSecs,
       selectedLanguageCode: 'bilingual',
+      failedAudioPath: null,
+      canRetry: false,
     );
   }
 
@@ -70,8 +93,11 @@ class RecordState {
     double? currentDb,
     List<double>? waveHistory,
     int? durationSecs,
+    int? maxDurationSecs,
     String? selectedLanguageCode,
     String? errorMessage,
+    String? failedAudioPath,
+    bool? canRetry,
   }) {
     return RecordState(
       status: status ?? this.status,
@@ -79,8 +105,11 @@ class RecordState {
       currentDb: currentDb ?? this.currentDb,
       waveHistory: waveHistory ?? this.waveHistory,
       durationSecs: durationSecs ?? this.durationSecs,
+      maxDurationSecs: maxDurationSecs ?? this.maxDurationSecs,
       selectedLanguageCode: selectedLanguageCode ?? this.selectedLanguageCode,
       errorMessage: errorMessage,
+      failedAudioPath: failedAudioPath ?? this.failedAudioPath,
+      canRetry: canRetry ?? this.canRetry,
     );
   }
 }
@@ -88,17 +117,27 @@ class RecordState {
 class RecordNotifier extends StateNotifier<RecordState> {
   final Ref _ref;
   final AudioRecorder _audioRecorder = AudioRecorder();
-  
+
   Timer? _timer;
   Timer? _amplitudeTimer;
   String? _localAudioPath;
-  
-  String _previousText = '';
-  String _currentSegment = '';
 
   RecordNotifier(this._ref) : super(RecordState.initial());
 
-  // Cancel/discard recording without saving
+  @override
+  void dispose() {
+    _stopTimers();
+    _audioRecorder.dispose();
+    super.dispose();
+  }
+
+  void setLanguage(String code) {
+    if (state.status == RecordStatus.idle || state.status == RecordStatus.retryRequired) {
+      state = state.copyWith(selectedLanguageCode: code);
+    }
+  }
+
+  // Cancel and discard recording
   Future<void> cancelRecording() async {
     _stopTimers();
     try {
@@ -106,43 +145,47 @@ class RecordNotifier extends StateNotifier<RecordState> {
     } catch (e, st) {
       debugPrint('Audio recorder stop error in cancelRecording: $e\n$st');
     }
+
     try {
-      await _ref.read(speechServiceProvider).cancelListening();
+      await _ref.read(livePreviewServiceProvider).cancelListening();
     } catch (e, st) {
-      debugPrint('Speech service cancel error in cancelRecording: $e\n$st');
+      debugPrint('Live preview cancel error in cancelRecording: $e\n$st');
     }
-    _previousText = '';
-    _currentSegment = '';
-    state = RecordState.initial();
+
+    // Clean up local audio file if present
+    final pathToDelete = _localAudioPath ?? state.failedAudioPath;
+    if (pathToDelete != null) {
+      try {
+        final file = File(pathToDelete);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('Failed to delete cancelled recording file: $e');
+      }
+    }
+
     _localAudioPath = null;
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _amplitudeTimer?.cancel();
-    _audioRecorder.dispose();
-    super.dispose();
-  }
-
-  // Change recording language
-  void setLanguage(String code) {
-    if (state.status == RecordStatus.idle) {
-      state = state.copyWith(selectedLanguageCode: code);
-    }
+    final config = _ref.read(appConfigProvider);
+    state = RecordState.initial(config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes));
   }
 
   // Start Recording Session
   Future<void> startRecording() async {
     try {
-      _previousText = '';
-      _currentSegment = '';
-      state = state.copyWith(errorMessage: null, liveText: 'Listening...');
+      final config = _ref.read(appConfigProvider);
+      final maxDuration = config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes);
 
-      // 1. Check & Request Permissions
-      final speechService = _ref.read(speechServiceProvider);
+      state = state.copyWith(
+        errorMessage: null,
+        liveText: '',
+        maxDurationSecs: maxDuration,
+        canRetry: false,
+        failedAudioPath: null,
+      );
+
+      // 1. Check microphone permission
       final hasMicPermission = await _audioRecorder.hasPermission();
-      
       if (!hasMicPermission) {
         state = state.copyWith(
           errorMessage: 'Microphone permission denied.',
@@ -151,37 +194,17 @@ class RecordNotifier extends StateNotifier<RecordState> {
         return;
       }
 
-      // 2. Initialize Native Speech Recognition
-      final initialized = await speechService.initialize(
-        onError: (SpeechRecognitionError err) {
-          debugPrint('Speech Engine Error: ${err.errorMsg}');
-          if (state.status == RecordStatus.recording) {
-            _restartListening();
-          }
-        },
-        onStatus: (String status) {
-          debugPrint('Speech Status: $status');
-          if ((status == 'notListening' || status == 'done') && state.status == RecordStatus.recording) {
-            _restartListening();
-          }
-        },
-      );
-
-      if (!initialized) {
-        state = state.copyWith(
-          errorMessage: 'Failed to initialize speech recognition engine.',
-          status: RecordStatus.idle,
-        );
-        return;
+      // 2. Prepare documents directory storage path
+      final appDir = await getApplicationDocumentsDirectory();
+      final recordingsDir = Directory('${appDir.path}/${config.audio.recordingsFolder}');
+      if (!await recordingsDir.exists()) {
+        await recordingsDir.create(recursive: true);
       }
 
-      // 3. Prepare Audio File Path from config
-      final config = _ref.read(appConfigProvider);
-      final directory = await getTemporaryDirectory();
-      final String filename = '${config.audio.fileNamePrefix}${DateTime.now().millisecondsSinceEpoch}${config.audio.fileExtension}';
-      _localAudioPath = '${directory.path}/$filename';
+      final filename = '${config.audio.fileNamePrefix}${const Uuid().v4()}${config.audio.fileExtension}';
+      _localAudioPath = '${recordingsDir.path}/$filename';
 
-      // 4. Start Audio Recorder with config
+      // 3. Start audio recorder entirely from config
       await _audioRecorder.start(
         RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -195,28 +218,34 @@ class RecordNotifier extends StateNotifier<RecordState> {
         path: _localAudioPath!,
       );
 
-      // 5. Start Native Speech recognition (instant live rendering)
-      await speechService.startListening(
-        localeId: state.selectedLanguageCode,
-        onResult: (String text) {
-          if (state.status == RecordStatus.recording) {
-            _currentSegment = text;
-            state = state.copyWith(
-              liveText: _previousText.isEmpty 
-                  ? _currentSegment 
-                  : '$_previousText\n$_currentSegment',
-            );
-          }
-        },
-      );
+      // 4. Optional live preview
+      final livePreview = _ref.read(livePreviewServiceProvider);
+      final isLivePreviewEnabled = _ref.read(settingsRepositoryProvider).isLivePreviewEnabled;
+
+      if (isLivePreviewEnabled) {
+        final initialized = await livePreview.initialize(
+          onTextUpdated: (text) {
+            if (state.status == RecordStatus.recording) {
+              state = state.copyWith(liveText: text);
+            }
+          },
+          onUnavailable: (reason) {
+            debugPrint('Live preview unavailable: $reason');
+          },
+        );
+
+        if (initialized) {
+          final langConfig = config.findLanguage(state.selectedLanguageCode);
+          await livePreview.startListening(language: langConfig);
+        }
+      }
 
       state = state.copyWith(
         status: RecordStatus.recording,
-        liveText: 'Speak now...',
+        liveText: isLivePreviewEnabled ? 'Listening...' : 'Recording in progress...',
         waveHistory: [],
       );
 
-      // 6. Start UI Amplitude tracker & seconds timer
       _startTimers();
     } catch (e) {
       state = state.copyWith(
@@ -226,86 +255,29 @@ class RecordNotifier extends StateNotifier<RecordState> {
     }
   }
 
-  // Automatic restart loop helper
-  void _restartListening() async {
-    if (state.status != RecordStatus.recording) return;
-
-    if (_currentSegment.trim().isNotEmpty) {
-      if (_previousText.isNotEmpty) {
-        _previousText = '$_previousText\n$_currentSegment';
-      } else {
-        _previousText = _currentSegment;
-      }
-      _currentSegment = '';
-    }
-
-    try {
-      final config = _ref.read(appConfigProvider);
-      final speechService = _ref.read(speechServiceProvider);
-      await Future.delayed(Duration(milliseconds: config.speechToText.restartDelayMs));
-      if (state.status != RecordStatus.recording) return;
-
-      await speechService.startListening(
-        localeId: state.selectedLanguageCode,
-        onResult: (String text) {
-          if (state.status == RecordStatus.recording) {
-            _currentSegment = text;
-            state = state.copyWith(
-              liveText: _previousText.isEmpty 
-                  ? _currentSegment 
-                  : '$_previousText\n$_currentSegment',
-            );
-          }
-        },
-      );
-    } catch (e) {
-      debugPrint('Failed to restart speech recognition: $e');
-    }
-  }
-
-  // Pause Recording Session
+  // Pause Recording
   Future<void> pauseRecording() async {
     if (state.status != RecordStatus.recording) return;
 
     try {
       _stopTimers();
       await _audioRecorder.pause();
-      await _ref.read(speechServiceProvider).stopListening();
-
-      if (_currentSegment.trim().isNotEmpty) {
-        if (_previousText.isNotEmpty) {
-          _previousText = '$_previousText\n$_currentSegment';
-        } else {
-          _previousText = _currentSegment;
-        }
-        _currentSegment = '';
-      }
-
+      await _ref.read(livePreviewServiceProvider).pauseListening();
       state = state.copyWith(status: RecordStatus.paused);
     } catch (e) {
       state = state.copyWith(errorMessage: 'Failed to pause: $e');
     }
   }
 
-  // Resume Recording Session
+  // Resume Recording
   Future<void> resumeRecording() async {
     if (state.status != RecordStatus.paused) return;
 
     try {
       await _audioRecorder.resume();
-      await _ref.read(speechServiceProvider).startListening(
-        localeId: state.selectedLanguageCode,
-        onResult: (String text) {
-          if (state.status == RecordStatus.recording) {
-            _currentSegment = text;
-            state = state.copyWith(
-              liveText: _previousText.isEmpty 
-                  ? _currentSegment 
-                  : '$_previousText\n$_currentSegment',
-            );
-          }
-        },
-      );
+      final config = _ref.read(appConfigProvider);
+      final langConfig = config.findLanguage(state.selectedLanguageCode);
+      await _ref.read(livePreviewServiceProvider).resumeListening(language: langConfig);
 
       state = state.copyWith(status: RecordStatus.recording);
       _startTimers();
@@ -314,94 +286,169 @@ class RecordNotifier extends StateNotifier<RecordState> {
     }
   }
 
-  // Stop & Finalize Recording (runs Whisper refine backend)
-  Future<void> stopRecording() async {
-    if (state.status != RecordStatus.recording && state.status != RecordStatus.paused) return;
+  // Stop & Finalize Recording
+  Future<bool> stopRecording() async {
+    if (state.status != RecordStatus.recording && state.status != RecordStatus.paused) {
+      return false;
+    }
 
     try {
       state = state.copyWith(status: RecordStatus.finalizing);
       _stopTimers();
 
-      // 1. Stop all inputs
       final String? finalAudioPath = await _audioRecorder.stop();
-      await _ref.read(speechServiceProvider).stopListening();
+      final livePreview = _ref.read(livePreviewServiceProvider);
+      await livePreview.stopListening();
+      final String onDeviceDraft = livePreview.draftText;
 
-      if (_currentSegment.trim().isNotEmpty) {
-        if (_previousText.isNotEmpty) {
-          _previousText = '$_previousText\n$_currentSegment';
-        } else {
-          _previousText = _currentSegment;
-        }
-        _currentSegment = '';
+      if (finalAudioPath == null) {
+        state = state.copyWith(
+          status: RecordStatus.idle,
+          errorMessage: 'Audio recording file was not created.',
+        );
+        return false;
       }
 
-      // Preserve native text if we need to fall back
-      final String nativeDraftText = _previousText;
-      String finalTranscript = nativeDraftText;
+      final config = _ref.read(appConfigProvider);
+      final langConfig = config.findLanguage(state.selectedLanguageCode);
+      final pipeline = _ref.read(transcriptionPipelineProvider);
 
-      // 2. Bilingual Whisper Refinement
-      if (finalAudioPath != null) {
-        state = state.copyWith(liveText: 'Refining transcript using AI...');
-        try {
-          final whisperService = _ref.read(whisperServiceProvider);
-          final refinedText = await whisperService.transcribeAudio(
-            filePath: finalAudioPath,
-            languageCode: state.selectedLanguageCode,
-          );
-          if (refinedText.isNotEmpty) {
-            finalTranscript = refinedText;
-          }
-        } catch (e) {
-          debugPrint('Whisper failed, falling back to on-device draft: $e');
-          state = state.copyWith(errorMessage: 'AI Refinement skipped (using live draft): $e');
-        }
+      state = state.copyWith(liveText: 'Refining transcript using AI...');
+
+      TranscriptionResult? pipelineResult;
+      try {
+        pipelineResult = await pipeline.transcribe(
+          audioFile: File(finalAudioPath),
+          language: langConfig,
+        );
+      } catch (e) {
+        debugPrint('Pipeline transcription failed: $e');
       }
 
-      // 3. Save transcript to Firestore
-      final String? currentUserId = _ref.read(authNotifierProvider).value?.uid;
-      if (currentUserId != null && finalTranscript.trim().isNotEmpty && finalTranscript != 'Speak now...' && finalTranscript != 'Listening...') {
+      String finalTranscript = '';
+      List<TranscriptSegment>? segments;
+      String? providerName;
+
+      if (pipelineResult != null && pipelineResult.text.trim().isNotEmpty) {
+        finalTranscript = pipelineResult.text;
+        segments = pipelineResult.segments;
+        providerName = pipelineResult.provider;
+      } else if (onDeviceDraft.trim().isNotEmpty) {
+        // Fall back to live draft
+        finalTranscript = onDeviceDraft;
+        providerName = 'on_device_fallback';
+        debugPrint('Using on-device speech draft as fallback');
+      } else {
+        // Both pipeline and draft failed -> NEVER LOSE AUDIO
+        state = state.copyWith(
+          status: RecordStatus.retryRequired,
+          failedAudioPath: finalAudioPath,
+          canRetry: true,
+          errorMessage: 'Transcription could not be completed. Your audio has been saved safely.',
+        );
+        return false;
+      }
+
+      // Save transcription to Firestore
+      final currentUserId = _ref.read(authNotifierProvider).value?.uid;
+      if (currentUserId != null && finalTranscript.trim().isNotEmpty) {
         final docId = const Uuid().v4();
-        final config = _ref.read(appConfigProvider);
-        final langConfig = config.findLanguage(state.selectedLanguageCode);
 
         final transcription = TranscriptionModel(
           transcriptionId: docId,
           userId: currentUserId,
           title: 'Transcription - ${DateTime.now().toString().split('.')[0]}',
           transcript: finalTranscript,
-          language: langConfig.displayName,
+          language: langConfig.storedName,
           duration: state.durationSecs,
+          audioLocalPath: finalAudioPath,
+          provider: providerName,
+          segments: segments,
           createdAt: DateTime.now(),
         );
 
         await _ref.read(firestoreServiceProvider).saveTranscription(transcription);
       }
 
-      // Reset state to idle
-      state = RecordState(
-        status: RecordStatus.idle,
-        liveText: '',
-        currentDb: -160.0,
-        waveHistory: const [],
-        durationSecs: 0,
-        selectedLanguageCode: state.selectedLanguageCode,
-        errorMessage: state.errorMessage,
-      );
+      state = RecordState.initial(config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes));
       _localAudioPath = null;
+      return true;
     } catch (e) {
       state = state.copyWith(
-        status: RecordStatus.idle,
-        errorMessage: 'Failed to save recording: $e',
+        status: RecordStatus.retryRequired,
+        failedAudioPath: _localAudioPath,
+        canRetry: true,
+        errorMessage: 'Failed to finalize transcription: $e',
       );
+      return false;
     }
   }
 
-  // Timer helpers using config
+  // Retry failed transcription
+  Future<bool> retryTranscription() async {
+    final audioPath = state.failedAudioPath;
+    if (audioPath == null) return false;
+
+    state = state.copyWith(
+      status: RecordStatus.finalizing,
+      liveText: 'Retrying transcription...',
+      errorMessage: null,
+    );
+
+    try {
+      final config = _ref.read(appConfigProvider);
+      final langConfig = config.findLanguage(state.selectedLanguageCode);
+      final pipeline = _ref.read(transcriptionPipelineProvider);
+
+      final result = await pipeline.transcribe(
+        audioFile: File(audioPath),
+        language: langConfig,
+      );
+
+      final currentUserId = _ref.read(authNotifierProvider).value?.uid;
+      if (currentUserId != null && result.text.trim().isNotEmpty) {
+        final docId = const Uuid().v4();
+
+        final transcription = TranscriptionModel(
+          transcriptionId: docId,
+          userId: currentUserId,
+          title: 'Transcription - ${DateTime.now().toString().split('.')[0]}',
+          transcript: result.text,
+          language: langConfig.storedName,
+          duration: state.durationSecs,
+          audioLocalPath: audioPath,
+          provider: result.provider,
+          segments: result.segments,
+          createdAt: DateTime.now(),
+        );
+
+        await _ref.read(firestoreServiceProvider).saveTranscription(transcription);
+      }
+
+      state = RecordState.initial(config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes));
+      _localAudioPath = null;
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        status: RecordStatus.retryRequired,
+        canRetry: true,
+        errorMessage: 'Retry failed: $e',
+      );
+      return false;
+    }
+  }
+
   void _startTimers() {
     final config = _ref.read(appConfigProvider);
 
     _timer = Timer.periodic(Duration(milliseconds: config.audio.secondsIntervalMs), (timer) {
-      state = state.copyWith(durationSecs: state.durationSecs + 1);
+      final nextSecs = state.durationSecs + 1;
+      // Auto-stop at maximum derived duration
+      if (nextSecs >= state.maxDurationSecs) {
+        stopRecording();
+        return;
+      }
+      state = state.copyWith(durationSecs: nextSecs);
     });
 
     _amplitudeTimer = Timer.periodic(Duration(milliseconds: config.audio.amplitudeIntervalMs), (timer) async {
@@ -431,7 +478,6 @@ class RecordNotifier extends StateNotifier<RecordState> {
   }
 }
 
-// Global provider for screen recording UI controllers
 final recordNotifierProvider = StateNotifierProvider<RecordNotifier, RecordState>((ref) {
   return RecordNotifier(ref);
 });

@@ -18,6 +18,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiKeyHint => 'Paste your API key here';
 
   @override
+  String get retryTitle => 'Transcription Incomplete';
+
+  @override
+  String get retryMessage =>
+      'Audio was safely saved to your device, but transcription could not be completed. Would you like to retry?';
+
+  @override
+  String get retryButton => 'Retry Transcription';
+
+  @override
+  String get discardButton => 'Discard Recording';
+
+  @override
+  String get maxDurationReached =>
+      'Maximum recording duration reached. Finalizing recording...';
+
+  @override
+  String get livePreviewUnavailable =>
+      'Live speech preview is currently unavailable.';
+
+  @override
   String get errorNoApiKey =>
       'No Groq API key configured. Please set your API key in Settings or environment.';
 

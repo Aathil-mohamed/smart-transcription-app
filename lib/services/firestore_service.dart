@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/transcript.dart';
 import '../core/config/app_config.dart';
@@ -67,9 +69,21 @@ class FirestoreService {
     }
   }
 
-  // 5. Delete - Remove a transcription document
+  // 5. Delete - Remove a transcription document and clean up local audio file
   Future<void> deleteTranscription(String transcriptionId) async {
     try {
+      final doc = await getTranscriptionById(transcriptionId);
+      if (doc?.audioLocalPath != null) {
+        try {
+          final file = File(doc!.audioLocalPath!);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          debugPrint('Failed to delete local audio file for $transcriptionId: $e');
+        }
+      }
+
       await _firestore
           .collection(_config.firestore.collectionTranscriptions)
           .doc(transcriptionId)

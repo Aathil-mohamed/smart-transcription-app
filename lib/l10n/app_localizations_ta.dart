@@ -18,6 +18,27 @@ class AppLocalizationsTa extends AppLocalizations {
   String get apiKeyHint => 'உங்கள் API விசையை இங்கே ஒட்டவும்';
 
   @override
+  String get retryTitle => 'டிரான்ஸ்கிரிப்ஷன் முழுமையடையவில்லை';
+
+  @override
+  String get retryMessage =>
+      'ஆடியோ சாதனத்தில் பாதுகாப்பாக சேமிக்கப்பட்டுள்ளது, ஆனால் டிரான்ஸ்கிரிப்ஷனை முடிக்க முடியவில்லை. மீண்டும் முயற்சிக்க விரும்புகிறீர்களா?';
+
+  @override
+  String get retryButton => 'மீண்டும் முயற்சி செய்';
+
+  @override
+  String get discardButton => 'ஆடியோவை நிராகரி';
+
+  @override
+  String get maxDurationReached =>
+      'அதிகபட்ச பதிவு நேரம் முடிந்தது. ஆடியோ சேமிக்கப்படுகிறது...';
+
+  @override
+  String get livePreviewUnavailable =>
+      'நேரடி பேச்சு முன்னோட்டம் தற்போது கிடைக்கவில்லை.';
+
+  @override
   String get errorNoApiKey =>
       'Groq API விசை உள்ளமைக்கப்படவில்லை. அமைப்புகளில் உங்கள் API விசையை அமைக்கவும்.';
 
