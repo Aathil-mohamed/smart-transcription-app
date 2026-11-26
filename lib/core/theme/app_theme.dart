@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
+import 'app_design_tokens.dart';
 
 class AppTheme {
   // Sleek Dark Theme
@@ -76,6 +77,9 @@ class AppTheme {
           borderSide: const BorderSide(color: AppConstants.accentDark, width: 2.0),
         ),
       ),
+      extensions: const [
+        AppDesignTokens.dark,
+      ],
     );
   }
 
@@ -154,6 +158,9 @@ class AppTheme {
           borderSide: const BorderSide(color: AppConstants.primaryLight, width: 2.0),
         ),
       ),
+      extensions: const [
+        AppDesignTokens.light,
+      ],
     );
   }
 }
