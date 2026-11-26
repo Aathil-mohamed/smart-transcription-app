@@ -16,6 +16,14 @@ class SettingsRepository {
   Future<void> setLivePreviewEnabled(bool enabled) async {
     await _prefs.setBool(_config.preferences.keyLivePreviewEnabled, enabled);
   }
+
+  List<String> get customVocabulary {
+    return _prefs.getStringList(_config.preferences.keyCustomVocabulary) ?? const [];
+  }
+
+  Future<void> setCustomVocabulary(List<String> words) async {
+    await _prefs.setStringList(_config.preferences.keyCustomVocabulary, words);
+  }
 }
 
 final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {

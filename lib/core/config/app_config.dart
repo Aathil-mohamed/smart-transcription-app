@@ -391,18 +391,32 @@ class LanguageConfig {
   }
 
   /// Builds prompt with sample sentence and vocabulary, truncating keeping the END of text.
+  ///
+  /// Combines static vocabulary from config with user words from SettingsRepository,
+  /// deduplicating them and ensuring user words are placed strictly at the END of the prompt
+  /// so left-truncation (which preserves the end) never drops the user's words.
   String buildPrompt({
     List<String>? additionalVocabulary,
-    int maxLength = 448,
+    int maxLength = 200,
   }) {
-    final vocab = <String>{...customVocabulary, ...?additionalVocabulary};
-    final vocabString = vocab.isNotEmpty ? ' ${vocab.join(', ')}.' : '';
+    final userWords = (additionalVocabulary ?? const <String>[])
+        .map((w) => w.trim())
+        .where((w) => w.isNotEmpty)
+        .toSet();
+
+    final staticWords = customVocabulary
+        .map((w) => w.trim())
+        .where((w) => w.isNotEmpty && !userWords.contains(w))
+        .toList();
+
+    final allVocab = [...staticWords, ...userWords];
+    final vocabString = allVocab.isNotEmpty ? ' ${allVocab.join(', ')}.' : '';
     final combined = '$promptSampleSentence$vocabString'.trim();
 
     if (combined.length <= maxLength) {
       return combined;
     }
-    // Truncate keeping the END of the text
+    // Truncate keeping the END of the text (preserving user words)
     return combined.substring(combined.length - maxLength);
   }
 }
@@ -472,12 +486,14 @@ class PreferencesConfig {
   final String keyThemeMode;
   final String keyUserLanguage;
   final String keyLivePreviewEnabled;
+  final String keyCustomVocabulary;
   final String keyLegacyCustomApiKey;
 
   const PreferencesConfig({
     required this.keyThemeMode,
     required this.keyUserLanguage,
     required this.keyLivePreviewEnabled,
+    this.keyCustomVocabulary = 'custom_vocabulary',
     required this.keyLegacyCustomApiKey,
   });
 
@@ -492,6 +508,7 @@ class PreferencesConfig {
       keyThemeMode: json['keyThemeMode'] as String,
       keyUserLanguage: json['keyUserLanguage'] as String,
       keyLivePreviewEnabled: json['keyLivePreviewEnabled'] as String? ?? 'live_preview_enabled',
+      keyCustomVocabulary: json['keyCustomVocabulary'] as String? ?? 'custom_vocabulary',
       keyLegacyCustomApiKey: json['keyLegacyCustomApiKey'] as String,
     );
   }
