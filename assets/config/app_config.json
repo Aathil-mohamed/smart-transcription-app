@@ -5,12 +5,34 @@
     "temperature": 0.0,
     "responseFormat": "verbose_json",
     "maxFileSizeBytes": 26214400,
-    "timeoutMinutes": 5
+    "timeoutMinutes": 5,
+    "retries": 2,
+    "retryStatuses": [429, 500, 502, 503, 504]
+  },
+  "transcription": {
+    "defaultProvider": "groq",
+    "providers": {
+      "groq": {
+        "baseUrl": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "model": "whisper-large-v3",
+        "temperature": 0.0,
+        "responseFormat": "verbose_json",
+        "timeoutSeconds": 300,
+        "retries": 2,
+        "retryStatuses": [429, 500, 502, 503, 504],
+        "maxUploadBytes": 26214400
+      }
+    }
   },
   "audio": {
     "sampleRate": 16000,
     "numChannels": 1,
     "encoder": "aacLc",
+    "bitRate": 64000,
+    "noiseSuppress": true,
+    "echoCancel": true,
+    "autoGain": true,
+    "recordingsFolder": "recordings",
     "amplitudeIntervalMs": 100,
     "secondsIntervalMs": 1000,
     "minDb": -160.0,
@@ -27,27 +49,42 @@
   },
   "languages": [
     {
+      "id": "bilingual",
       "code": "bilingual",
+      "storedName": "Bilingual (Tamil + English)",
       "name": "Bilingual (Tamil + English)",
+      "uiLabel": "Bilingual",
       "displayName": "Bilingual",
+      "speechLocale": "ta-IN",
       "sttLocale": "ta-IN",
       "whisperLanguage": null,
+      "promptKey": "bilingual_prompt",
       "whisperPrompt": "Transcribe this audio accurately. The speaker uses mixed Tamil (தமிழ்) and English. Preserve the original words exactly as spoken. Use proper punctuation and formatting."
     },
     {
+      "id": "ta-IN",
       "code": "ta-IN",
+      "storedName": "Tamil (தமிழ்)",
       "name": "Tamil (தமிழ்)",
+      "uiLabel": "Tamil",
       "displayName": "Tamil",
+      "speechLocale": "ta-IN",
       "sttLocale": "ta-IN",
       "whisperLanguage": "ta",
+      "promptKey": "tamil_prompt",
       "whisperPrompt": "இது ஒரு தமிழ் உரையாடல். அனைத்து வார்த்தைகளையும் துல்லியமாக எழுதவும்."
     },
     {
+      "id": "en-US",
       "code": "en-US",
+      "storedName": "English (United States)",
       "name": "English (United States)",
+      "uiLabel": "English",
       "displayName": "English",
+      "speechLocale": "en-US",
       "sttLocale": "en-US",
       "whisperLanguage": "en",
+      "promptKey": "english_prompt",
       "whisperPrompt": "Transcribe this English audio accurately with proper punctuation and formatting."
     }
   ],
@@ -55,6 +92,7 @@
     "collectionUsers": "users",
     "collectionTranscriptions": "transcriptions",
     "collectionExports": "exports",
+    "pageSize": 20,
     "cachePersistenceEnabled": true,
     "cacheSizeBytesUnlimited": true
   },
@@ -68,12 +106,21 @@
   },
   "secrets": {
     "secureStorageKeyGroqApiKey": "secure_groq_api_key",
-    "dartDefineKeyGroqApiKey": "GROQ_API_KEY"
+    "secureStorageKeyGeminiApiKey": "secure_gemini_api_key",
+    "secureStorageKeyGoogleTranslateApiKey": "secure_google_translate_api_key",
+    "dartDefineKeyGroqApiKey": "GROQ_API_KEY",
+    "dartDefineKeyGeminiApiKey": "GEMINI_API_KEY",
+    "dartDefineKeyGoogleTranslateApiKey": "GOOGLE_TRANSLATE_API_KEY"
   },
   "export": {
     "pdfFontUrl": "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansTamil/NotoSansTamil-Regular.ttf",
     "defaultPdfFileName": "transcript.pdf",
     "defaultTxtFileName": "transcript.txt",
-    "defaultDocFileName": "transcript.doc"
+    "defaultDocFileName": "transcript.doc",
+    "pdfPageMargin": 24.0,
+    "pdfHeaderFontSize": 18.0,
+    "pdfBodyFontSize": 12.0,
+    "pdfMetadataFontSize": 10.0,
+    "pdfAccentColorHex": "#6C5CE7"
   }
 }
