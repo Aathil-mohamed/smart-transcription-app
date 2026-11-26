@@ -119,3 +119,19 @@ $RECYCLE.BIN/
 *.crash
 *.stackdump
 migrate_working_dir/
+
+# Branding preview contact sheet (do not commit)
+assets/branding/preview.png
+
+# Audio recordings and test files
+*.m4a
+*.wav
+*.mp3
+*.aac
+
+# Standalone build outputs
+*.apk
+*.aab
+
+# Temporary helper scripts
+generate_*.py
