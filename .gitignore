@@ -39,11 +39,17 @@ app.*.map.json
 .env
 .env.*
 *.env
+env/secrets.json
+!env/secrets.example.json
 *.key
 *.keystore
 *.jks
 **/android/key.properties
 secring.gpg
+
+# Internal audit and technical reports
+CODE_AUDIT_REPORT.md
+SYSTEM_ARCHITECTURE_AUDIT.md
 
 # Firebase client configuration (contains project credentials)
 lib/firebase_options.dart

@@ -1,0 +1,79 @@
+{
+  "api": {
+    "groqWhisperUrl": "https://api.groq.com/openai/v1/audio/transcriptions",
+    "whisperModel": "whisper-large-v3",
+    "temperature": 0.0,
+    "responseFormat": "verbose_json",
+    "maxFileSizeBytes": 26214400,
+    "timeoutMinutes": 5
+  },
+  "audio": {
+    "sampleRate": 16000,
+    "numChannels": 1,
+    "encoder": "aacLc",
+    "amplitudeIntervalMs": 100,
+    "secondsIntervalMs": 1000,
+    "minDb": -160.0,
+    "maxDb": 0.0,
+    "waveHistoryLimit": 45,
+    "fileNamePrefix": "rec_",
+    "fileExtension": ".m4a"
+  },
+  "speechToText": {
+    "listenForHours": 1,
+    "pauseForSeconds": 10,
+    "listenMode": "dictation",
+    "restartDelayMs": 100
+  },
+  "languages": [
+    {
+      "code": "bilingual",
+      "name": "Bilingual (Tamil + English)",
+      "displayName": "Bilingual",
+      "sttLocale": "ta-IN",
+      "whisperLanguage": null,
+      "whisperPrompt": "Transcribe this audio accurately. The speaker uses mixed Tamil (தமிழ்) and English. Preserve the original words exactly as spoken. Use proper punctuation and formatting."
+    },
+    {
+      "code": "ta-IN",
+      "name": "Tamil (தமிழ்)",
+      "displayName": "Tamil",
+      "sttLocale": "ta-IN",
+      "whisperLanguage": "ta",
+      "whisperPrompt": "இது ஒரு தமிழ் உரையாடல். அனைத்து வார்த்தைகளையும் துல்லியமாக எழுதவும்."
+    },
+    {
+      "code": "en-US",
+      "name": "English (United States)",
+      "displayName": "English",
+      "sttLocale": "en-US",
+      "whisperLanguage": "en",
+      "whisperPrompt": "Transcribe this English audio accurately with proper punctuation and formatting."
+    }
+  ],
+  "firestore": {
+    "collectionUsers": "users",
+    "collectionTranscriptions": "transcriptions",
+    "collectionExports": "exports",
+    "cachePersistenceEnabled": true,
+    "cacheSizeBytesUnlimited": true
+  },
+  "storage": {
+    "exportsPathPattern": "users/{userId}/exports/{transcriptionId}/{fileName}"
+  },
+  "preferences": {
+    "keyThemeMode": "theme_mode",
+    "keyUserLanguage": "user_language",
+    "keyLegacyCustomApiKey": "groq_api_key_custom"
+  },
+  "secrets": {
+    "secureStorageKeyGroqApiKey": "secure_groq_api_key",
+    "dartDefineKeyGroqApiKey": "GROQ_API_KEY"
+  },
+  "export": {
+    "pdfFontUrl": "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansTamil/NotoSansTamil-Regular.ttf",
+    "defaultPdfFileName": "transcript.pdf",
+    "defaultTxtFileName": "transcript.txt",
+    "defaultDocFileName": "transcript.doc"
+  }
+}
