@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/config/app_config.dart';
 import '../../core/errors/service_error.dart';
@@ -78,11 +79,14 @@ class GroqWhisperProvider implements TranscriptionProvider {
     required ProviderConfig providerConfig,
     List<String>? additionalVocabulary,
     required bool isRetry,
+    bool withoutPrompt = false,
   }) async {
-    final prompt = language.buildPrompt(
-      additionalVocabulary: additionalVocabulary,
-      maxLength: _config.transcription.maxPromptLengthChars,
-    );
+    final prompt = withoutPrompt
+        ? null
+        : language.buildPrompt(
+            additionalVocabulary: additionalVocabulary,
+            maxLength: _config.transcription.maxPromptLengthChars,
+          );
 
     final streamedResponse = await _networkHelper.sendWithRetry(
       _client,
@@ -94,7 +98,9 @@ class GroqWhisperProvider implements TranscriptionProvider {
         request.fields['temperature'] = providerConfig.temperature.toString();
         request.fields['response_format'] = providerConfig.responseFormat;
         request.fields['timestamp_granularities[]'] = providerConfig.timestampGranularities;
-        request.fields['prompt'] = prompt;
+        if (prompt != null && prompt.isNotEmpty) {
+          request.fields['prompt'] = prompt;
+        }
 
         if (language.whisperLanguage != null && language.whisperLanguage!.isNotEmpty) {
           request.fields['language'] = language.whisperLanguage!;
@@ -107,6 +113,21 @@ class GroqWhisperProvider implements TranscriptionProvider {
     final responseBody = await streamedResponse.stream.bytesToString();
 
     if (streamedResponse.statusCode != 200) {
+      final isPromptError = responseBody.toLowerCase().contains('prompt');
+      if (!withoutPrompt && isPromptError) {
+        // Groq rejected request because of the prompt; retry once without prompt and log it
+        debugPrint('WARNING: Groq rejected request due to prompt ($responseBody). Retrying once without prompt.');
+        return _executeGroqRequest(
+          audioFile: audioFile,
+          language: language,
+          apiKey: apiKey,
+          providerConfig: providerConfig,
+          additionalVocabulary: additionalVocabulary,
+          isRetry: isRetry,
+          withoutPrompt: true,
+        );
+      }
+
       final errorCode = NetworkHelper.mapStatusCode(streamedResponse.statusCode);
       throw ServiceException(
         errorCode,
@@ -154,6 +175,7 @@ class GroqWhisperProvider implements TranscriptionProvider {
         providerConfig: providerConfig,
         additionalVocabulary: additionalVocabulary,
         isRetry: true,
+        withoutPrompt: withoutPrompt,
       );
     }
 
@@ -171,6 +193,8 @@ class GroqWhisperProvider implements TranscriptionProvider {
       segments: filtered.segments,
       provider: id,
       detectedLanguage: detectedLang,
+      segmentCount: filtered.segments.length,
+      droppedSegmentCount: filtered.droppedCount,
     );
   }
 }
