@@ -141,6 +141,13 @@ void main() {
           pdfMetadataFontSize: 10,
           pdfAccentColorHex: '#000000',
         ),
+        branding: BrandingConfig(
+          logoBlack: 'assets/branding/logo_black.png',
+          logoWhite: 'assets/branding/logo_white.png',
+          iconFull: 'assets/branding/icon_full.png',
+          iconForeground: 'assets/branding/icon_foreground.png',
+          appName: 'Scribly',
+        ),
       );
 
       final secretsService = SecretsService(config);

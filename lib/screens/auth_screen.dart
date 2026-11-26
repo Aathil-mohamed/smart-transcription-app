@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/theme/app_design_tokens.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/app_logo.dart';
 import 'dashboard_screen.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -82,13 +84,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Icon header
-                  Icon(
-                    Icons.record_voice_over,
-                    size: 64,
-                    color: theme.colorScheme.primary,
+                  // Brand Logo
+                  const Center(
+                    child: AppLogo(
+                      height: 64,
+                    ),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: context.tokens.spaceLg),
                   
                   // Screen Title
                   Text(
