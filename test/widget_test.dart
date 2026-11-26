@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_transcription_app/core/config/app_config.dart';
+import 'package:smart_transcription_app/services/settings_repository.dart';
 import 'package:smart_transcription_app/main.dart';
 
 void main() {
@@ -14,6 +16,42 @@ void main() {
       'timeoutMinutes': 5,
       'retries': 2,
       'retryStatuses': [429, 500, 502, 503, 504],
+    },
+    'transcription': {
+      'pipeline': ['groq', 'gemini'],
+      'maxPromptLengthChars': 448,
+      'providers': {
+        'groq': {
+          'baseUrl': 'https://api.groq.com/openai/v1/audio/transcriptions',
+          'model': 'whisper-large-v3',
+          'temperature': 0.0,
+          'responseFormat': 'verbose_json',
+          'timestampGranularities': 'segment',
+          'timeoutSeconds': 300,
+          'maxUploadBytes': 26214400,
+        },
+        'gemini': {
+          'baseUrl': 'https://generativelanguage.googleapis.com/v1beta/models',
+          'model': 'gemini-1.5-flash',
+          'temperature': 0.0,
+          'timeoutSeconds': 180,
+          'maxUploadBytes': 20971520,
+        },
+      },
+      'qualityFilter': {
+        'maxNoSpeechProb': 0.6,
+        'minAvgLogprob': -1.0,
+        'maxCompressionRatio': 2.4,
+        'dropConsecutiveDuplicates': true,
+      },
+      'retry': {
+        'maxRetries': 3,
+        'initialBackoffMs': 1000,
+        'maxBackoffMs': 10000,
+        'backoffMultiplier': 2.0,
+        'retryStatuses': [429, 500, 502, 503, 504],
+        'maxRetryAfterSeconds': 60,
+      },
     },
     'audio': {
       'sampleRate': 16000,
@@ -91,12 +129,15 @@ void main() {
   };
 
   testWidgets('App shows splash screen', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     final testConfig = AppConfig.fromJson(testConfigJson);
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appConfigProvider.overrideWithValue(testConfig),
+          sharedPreferencesProvider.overrideWithValue(prefs),
         ],
         child: const MyApp(),
       ),

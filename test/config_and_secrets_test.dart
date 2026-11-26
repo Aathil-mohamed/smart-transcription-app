@@ -87,9 +87,39 @@ void main() {
           cacheSizeBytesUnlimited: true,
         ),
         storage: StorageConfig(exportsPathPattern: '{userId}/{fileName}'),
+        transcription: TranscriptionConfig(
+          pipeline: ['groq', 'gemini'],
+          maxPromptLengthChars: 448,
+          providers: {
+            'groq': ProviderConfig(
+              baseUrl: 'https://api.groq.com',
+              model: 'whisper-large-v3',
+              temperature: 0.0,
+              responseFormat: 'verbose_json',
+              timestampGranularities: 'segment',
+              timeoutSeconds: 300,
+              maxUploadBytes: 26214400,
+            ),
+          },
+          qualityFilter: QualityFilterConfig(
+            maxNoSpeechProb: 0.6,
+            minAvgLogprob: -1.0,
+            maxCompressionRatio: 2.4,
+            dropConsecutiveDuplicates: true,
+          ),
+          retry: RetryConfig(
+            maxRetries: 3,
+            initialBackoffMs: 1000,
+            maxBackoffMs: 10000,
+            backoffMultiplier: 2.0,
+            retryStatuses: [429, 500],
+            maxRetryAfterSeconds: 60,
+          ),
+        ),
         preferences: PreferencesConfig(
           keyThemeMode: 'theme_mode',
           keyUserLanguage: 'user_language',
+          keyLivePreviewEnabled: 'live_preview_enabled',
           keyLegacyCustomApiKey: 'groq_api_key_custom',
         ),
         secrets: SecretsConfig(
