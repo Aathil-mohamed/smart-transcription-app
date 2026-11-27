@@ -1,5 +1,21 @@
 import 'package:flutter/material.dart';
 
+class Palette {
+  static const paper = Color(0xFFF6F3EC);
+  static const paperCard = Color(0xFFFFFFFF);
+  static const paperTint = Color(0xFFEDE8DC);
+
+  static const charcoal = Color(0xFF0E100F);
+  static const charcoalCard = Color(0xFF181B19);
+  static const charcoalTint = Color(0xFF222623);
+
+  static const ink = Color(0xFF141514);
+  static const emerald = Color(0xFF0D4A3E);
+  static const emeraldLight = Color(0xFF167360);
+  static const coral = Color(0xFFFF5A36);
+  static const amber = Color(0xFFF59E0B);
+}
+
 @immutable
 class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   // Brand & Semantic Colors
@@ -82,19 +98,19 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   });
 
   static const dark = AppDesignTokens(
-    primary: Color(0xFF6C63FF),
-    secondary: Color(0xFF8B5CF6),
-    accent: Color(0xFF00E6FF),
-    background: Color(0xFF0F0E17),
-    surface: Color(0xFF1E1C2A),
-    surfaceSubtle: Color(0xFF282538),
-    textPrimary: Color(0xFFFFFEFA),
-    textSecondary: Color(0xFFA7A6BA),
-    textMuted: Color(0xFF6E6D7E),
-    border: Color(0x1AFFFFFF),
-    error: Color(0xFFFF5252),
-    success: Color(0xFF00C853),
-    warning: Color(0xFFFFB300),
+    primary: Palette.emerald,
+    secondary: Palette.emeraldLight,
+    accent: Palette.coral,
+    background: Palette.charcoal,
+    surface: Palette.charcoalCard,
+    surfaceSubtle: Palette.charcoalTint,
+    textPrimary: Colors.white,
+    textSecondary: Color(0xFFA6AAA6),
+    textMuted: Color(0xFF6B706B),
+    border: Color(0x18FFFFFF),
+    error: Palette.coral,
+    success: Palette.emeraldLight,
+    warning: Palette.amber,
     spaceXs: 4.0,
     spaceSm: 8.0,
     spaceMd: 16.0,
@@ -118,19 +134,19 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   );
 
   static const light = AppDesignTokens(
-    primary: Color(0xFF4F46E5),
-    secondary: Color(0xFF6366F1),
-    accent: Color(0xFF0891B2),
-    background: Color(0xFFF8FAFC),
-    surface: Color(0xFFFFFFFF),
-    surfaceSubtle: Color(0xFFF1F5F9),
-    textPrimary: Color(0xFF0F172A),
-    textSecondary: Color(0xFF475569),
-    textMuted: Color(0xFF94A3B8),
-    border: Color(0x0F000000),
-    error: Color(0xFFD32F2F),
-    success: Color(0xFF2E7D32),
-    warning: Color(0xFFED6C02),
+    primary: Palette.emerald,
+    secondary: Palette.emeraldLight,
+    accent: Palette.coral,
+    background: Palette.paper,
+    surface: Palette.paperCard,
+    surfaceSubtle: Palette.paperTint,
+    textPrimary: Palette.ink,
+    textSecondary: Color(0xFF5A5D5A),
+    textMuted: Color(0xFF8A8E8A),
+    border: Color(0x16141514),
+    error: Palette.coral,
+    success: Palette.emerald,
+    warning: Palette.amber,
     spaceXs: 4.0,
     spaceSm: 8.0,
     spaceMd: 16.0,

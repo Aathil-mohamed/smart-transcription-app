@@ -36,6 +36,14 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
     }
   }
 
+  // Set specific ThemeMode
+  Future<void> setThemeMode(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    final config = _ref.read(appConfigProvider);
+    state = mode;
+    await prefs.setBool(config.preferences.keyThemeMode, mode == ThemeMode.dark);
+  }
+
   // Custom API key backward-compatible delegates
   Future<void> setCustomApiKey(String key) async {
     await _ref.read(secretsServiceProvider).setGroqApiKey(key);

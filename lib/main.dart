@@ -78,9 +78,11 @@ class MyApp extends ConsumerWidget {
     final themeMode = ref.watch(themeNotifierProvider);
 
     return MaterialApp(
-      title: 'Smart Transcription System',
+      title: 'Scribly',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
+      themeAnimationDuration: const Duration(milliseconds: 380),
+      themeAnimationCurve: Curves.easeOutCubic,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       localizationsDelegates: const [

@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../core/config/app_config.dart';
+import '../core/theme/app_design_tokens.dart';
+import '../core/theme/motion_helpers.dart';
 import '../models/transcript.dart';
 import '../services/export_service.dart';
 
-// Provider for ExportService
 final exportServiceProvider = Provider<ExportService>((ref) {
   final config = ref.watch(appConfigProvider);
   return ExportService(config);
@@ -28,15 +31,14 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   bool _isProcessing = false;
   String? _cloudUrl;
 
-  // Process file generation and optional upload
   Future<void> _processExport(String format) async {
+    HapticFeedback.mediumImpact();
     setState(() => _isProcessing = true);
     final exporter = ref.read(exportServiceProvider);
 
     try {
       File generatedFile;
-      
-      // 1. Generate local file depending on format
+
       if (format == 'pdf') {
         generatedFile = await exporter.generatePdf(widget.transcription);
       } else if (format == 'docx') {
@@ -47,7 +49,6 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
       String? shareUrl;
 
-      // 2. Upload to Cloud Storage if requested
       if (_uploadToCloud) {
         final userId = widget.transcription.userId;
         shareUrl = await exporter.uploadExportToStorage(
@@ -61,7 +62,6 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         });
       }
 
-      // 3. Trigger Native Share Sheet
       final String shareSubject = 'Transcript: ${widget.transcription.title}';
       await exporter.shareFile(generatedFile, shareSubject);
 
@@ -69,10 +69,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_uploadToCloud 
-                ? 'File generated and uploaded to Cloud successfully!' 
+            content: Text(_uploadToCloud
+                ? 'File generated and uploaded to Cloud successfully!'
                 : 'File generated and opened for sharing!'),
-            backgroundColor: Colors.teal,
+            backgroundColor: Palette.emerald,
           ),
         );
       }
@@ -82,7 +82,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Export failed: $e'),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: Palette.coral,
           ),
         );
       }
@@ -94,152 +94,215 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Export File'),
-      ),
       body: SafeArea(
         child: _isProcessing
-            ? Center(
+            ? const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
+                    CircularProgressIndicator(color: Palette.coral),
+                    SizedBox(height: 16),
                     Text(
-                      _uploadToCloud 
-                          ? 'Generating file and uploading to Cloud...' 
-                          : 'Generating document...',
-                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+                      'Generating document...',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                     ),
                   ],
                 ),
               )
-            : Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Export: ${widget.transcription.title}',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Choose a format to save or share your transcript.',
-                      style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Format Options List
-                    _buildFormatOption(
-                      format: 'pdf',
-                      title: 'Portable Document Format (PDF)',
-                      subtitle: 'Best for reading, printing, and official reports',
-                      icon: Icons.picture_as_pdf,
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildFormatOption(
-                      format: 'docx',
-                      title: 'Microsoft Word Document (DOC)',
-                      subtitle: 'Best for advanced text editing in Word or Docs',
-                      icon: Icons.description,
-                      color: Colors.blue,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildFormatOption(
-                      format: 'txt',
-                      title: 'Plain Text File (TXT)',
-                      subtitle: 'Lightweight format, compatible with any device',
-                      icon: Icons.text_snippet,
-                      color: Colors.grey,
-                    ),
-                    const SizedBox(height: 32),
-
-                    const Divider(),
-                    const SizedBox(height: 16),
-
-                    // Cloud backup checkbox
-                    CheckboxListTile(
-                      title: const Text('Upload to Firebase Cloud Storage'),
-                      subtitle: const Text('Creates a secure online link to access or share this document from anywhere.'),
-                      value: _uploadToCloud,
-                      onChanged: (val) {
-                        if (val != null) setState(() => _uploadToCloud = val);
-                      },
-                      secondary: Icon(Icons.cloud_upload_outlined, color: theme.colorScheme.primary),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-
-                    if (_cloudUrl != null) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: SelectableText(
-                          'Cloud URL:\n$_cloudUrl',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          textAlign: TextAlign.center,
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(22, 14, 22, 32),
+                children: [
+                  // Back Pill Navigation
+                  Row(
+                    children: [
+                      Tactile(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: const Icon(Icons.arrow_back_rounded, size: 20),
                         ),
                       ),
+                      const SizedBox(width: 14),
+                      const Text(
+                        'Export Document',
+                        style: TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.w700),
+                      ),
                     ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  Text(
+                    widget.transcription.title,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Choose a format to save or share your transcript.',
+                    style: TextStyle(fontSize: 13.5, color: theme.hintColor),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // PDF Format Option
+                  _buildFormatTile(
+                    title: 'Portable Document Format (PDF)',
+                    subtitle: 'Best for reading, printing, and official reports',
+                    icon: Icons.picture_as_pdf_rounded,
+                    color: Palette.coral,
+                    onTap: () => _processExport('pdf'),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // DOCX Format Option
+                  _buildFormatTile(
+                    title: 'Microsoft Word Document (DOCX)',
+                    subtitle: 'Best for advanced text editing in Word or Docs',
+                    icon: Icons.description_rounded,
+                    color: Palette.emerald,
+                    onTap: () => _processExport('docx'),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // TXT Format Option
+                  _buildFormatTile(
+                    title: 'Plain Text File (TXT)',
+                    subtitle: 'Lightweight format, compatible with any device',
+                    icon: Icons.text_snippet_rounded,
+                    color: Palette.amber,
+                    onTap: () => _processExport('txt'),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Cloud Upload Switch
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.cloud_upload_outlined,
+                                color: Palette.emerald, size: 24),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Cloud Storage Backup',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                Text(
+                                  'Generate secure online link',
+                                  style: TextStyle(
+                                      fontSize: 12, color: theme.hintColor),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Switch(
+                          value: _uploadToCloud,
+                          activeThumbColor: Palette.coral,
+                          onChanged: (val) =>
+                              setState(() => _uploadToCloud = val),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (_cloudUrl != null) ...[
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Palette.emerald.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: Palette.emerald.withValues(alpha: 0.3)),
+                      ),
+                      child: SelectableText(
+                        'Cloud Access URL:\n$_cloudUrl',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Palette.emerald,
+                        ),
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
       ),
     );
   }
 
-  // Build clickable item
-  Widget _buildFormatOption({
-    required String format,
+  Widget _buildFormatTile({
     required String title,
     required String subtitle,
     required IconData icon,
     required Color color,
+    required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        onTap: () => _processExport(format),
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 28),
+    return Tactile(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: theme.dividerColor),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-                    ),
-                  ],
-                ),
+              child: Icon(icon, color: color, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: theme.hintColor),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded,
+                size: 14, color: theme.hintColor),
+          ],
         ),
       ),
     );

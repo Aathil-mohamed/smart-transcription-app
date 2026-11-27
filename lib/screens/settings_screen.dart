@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../l10n/app_localizations.dart';
+
+import '../core/theme/app_design_tokens.dart';
+import '../core/theme/motion_helpers.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/secrets_service.dart';
 import 'auth_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -13,34 +17,63 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  final _apiKeyController = TextEditingController();
+  final _groqApiKeyController = TextEditingController();
+  final _geminiApiKeyController = TextEditingController();
+
+  bool _hideGroqKey = true;
+  bool _hideGeminiKey = true;
 
   @override
   void initState() {
     super.initState();
-    _loadCustomApiKey();
+    _loadApiKeys();
   }
 
   @override
   void dispose() {
-    _apiKeyController.dispose();
+    _groqApiKeyController.dispose();
+    _geminiApiKeyController.dispose();
     super.dispose();
   }
 
-  // Load custom key from SharedPreferences
-  Future<void> _loadCustomApiKey() async {
-    final key = await ref.read(themeNotifierProvider.notifier).getCustomApiKey();
-    setState(() {
-      _apiKeyController.text = key;
-    });
+  Future<void> _loadApiKeys() async {
+    final secrets = ref.read(secretsServiceProvider);
+    final groqKey = await secrets.getGroqApiKey();
+    final geminiKey = await secrets.getGeminiApiKey();
+    if (mounted) {
+      setState(() {
+        _groqApiKeyController.text = groqKey ?? '';
+        _geminiApiKeyController.text = geminiKey ?? '';
+      });
+    }
   }
 
-  // Save key
-  Future<void> _saveCustomApiKey() async {
-    await ref.read(themeNotifierProvider.notifier).setCustomApiKey(_apiKeyController.text.trim());
+  Future<void> _saveGroqApiKey() async {
+    await ref
+        .read(secretsServiceProvider)
+        .setGroqApiKey(_groqApiKeyController.text.trim());
     if (mounted) {
+      HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Groq API Key saved successfully!'), backgroundColor: Colors.teal),
+        const SnackBar(
+          content: Text('Groq Whisper API Key saved securely!'),
+          backgroundColor: Palette.emerald,
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveGeminiApiKey() async {
+    await ref
+        .read(secretsServiceProvider)
+        .setGeminiApiKey(_geminiApiKeyController.text.trim());
+    if (mounted) {
+      HapticFeedback.lightImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gemini Fallback API Key saved securely!'),
+          backgroundColor: Palette.emerald,
+        ),
       );
     }
   }
@@ -48,194 +81,383 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final userDetails = ref.watch(userDetailsProvider);
     final themeMode = ref.watch(themeNotifierProvider);
     final themeNotifier = ref.read(themeNotifierProvider.notifier);
     final authNotifier = ref.read(authNotifierProvider.notifier);
 
+    final user = userDetails.value;
+    final displayName =
+        user?.name.isNotEmpty == true ? user!.name : 'Studio User';
+    final userEmail = user?.email ?? 'user@smarttranscribe.app';
+    final initialLetter =
+        displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 32),
           children: [
-            // User profile section card
-            userDetails.when(
-              data: (user) => Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 30,
-                        backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-                        child: Text(
-                          user?.name.isNotEmpty == true ? user!.name[0].toUpperCase() : 'U',
-                          style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 24),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              user?.name ?? 'User Name',
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              user?.email ?? 'user@email.com',
-                              style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+            // Top Back Navigation
+            Row(
+              children: [
+                Tactile(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                    child: const Icon(Icons.arrow_back_rounded, size: 20),
                   ),
                 ),
-              ),
-              loading: () => const LinearProgressIndicator(),
-              error: (err, stack) => const Text('Error loading user profile'),
+              ],
             ),
-            const SizedBox(height: 24),
-
+            const SizedBox(height: 16),
             const Text(
-              'App Customizations',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey),
+              'Settings',
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 20),
 
-            // Theme Mode Toggle Option
-            Card(
-              child: SwitchListTile(
-                title: const Text('Dark Theme Mode'),
-                subtitle: const Text('Switch between light and dark UI themes'),
-                value: themeMode == ThemeMode.dark,
-                onChanged: (val) => themeNotifier.toggleTheme(),
-                secondary: const Icon(Icons.dark_mode_outlined),
+            // Emerald Profile Banner
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Palette.emerald,
+                borderRadius: BorderRadius.circular(24),
               ),
-            ),
-            const SizedBox(height: 24),
-
-            const Text(
-              'API CONFIGURATIONS (WHISPER AI)',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 0.5),
-            ),
-            const SizedBox(height: 10),
-
-            // Groq API Key Input Form
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Colors.white24,
+                    child: Text(
+                      initialLetter,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.vpn_key_rounded, color: theme.colorScheme.primary),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Groq API Key',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          userEmail,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Groq Whisper provides exceptionally clear, exact, bilingual (Tamil + English) transcription refinement for audio recordings.',
-                      style: TextStyle(fontSize: 12, height: 1.4, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(10),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Dark Mode Row with Sun/Moon Animation
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: theme.dividerColor),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        transitionBuilder: (c, a) =>
+                            RotationTransition(turns: a, child: c),
+                        child: Icon(
+                          isDark
+                              ? Icons.dark_mode_rounded
+                              : Icons.light_mode_rounded,
+                          key: ValueKey(isDark),
+                          color: isDark ? Palette.amber : Palette.coral,
+                        ),
                       ),
-                      child: Column(
+                      const SizedBox(width: 12),
+                      const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'How to get a free API Key:',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
-                          ),
-                          const SizedBox(height: 4),
-                          SelectableText(
-                            '1. Visit console.groq.com/keys\n2. Create a free API Key\n3. Paste the key below and tap SAVE',
+                          Text(
+                            'Dark Theme Mode',
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
                             ),
+                          ),
+                          Text(
+                            'Switch between paper & charcoal',
+                            style: TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _apiKeyController,
-                      decoration: InputDecoration(
-                        labelText: AppLocalizations.of(context)?.apiKeyLabel ?? 'Enter Groq API Key',
-                        hintText: AppLocalizations.of(context)?.apiKeyHint ?? 'Paste your API key here',
-                        prefixIcon: const Icon(Icons.password_rounded),
-                      ),
-                      obscureText: true,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _saveCustomApiKey,
-                      child: const Text('SAVE API KEY'),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                  Switch(
+                    value: themeMode == ThemeMode.dark,
+                    activeThumbColor: Palette.coral,
+                    onChanged: (v) {
+                      HapticFeedback.selectionClick();
+                      themeNotifier.setThemeMode(
+                          v ? ThemeMode.dark : ThemeMode.light);
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 18),
 
-            // Log Out Button
-            ElevatedButton.icon(
-              icon: const Icon(Icons.logout),
-              label: const Text('LOG OUT SESSION'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
-                foregroundColor: Colors.redAccent,
-                side: const BorderSide(color: Colors.redAccent, width: 1.0),
-                elevation: 0,
+            // Terminal-Styled Groq Whisper API Key Card
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: isDark ? Palette.charcoalCard : Palette.ink,
+                borderRadius: BorderRadius.circular(24),
               ),
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Log Out'),
-                    content: const Text('Are you sure you want to log out of your session?'),
-                    actions: [
-                      TextButton(
-                        child: const Text('CANCEL'),
-                        onPressed: () => Navigator.of(context).pop(false),
-                      ),
-                      TextButton(
-                        child: const Text('LOG OUT', style: TextStyle(color: Colors.redAccent)),
-                        onPressed: () => Navigator.of(context).pop(true),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.bolt_rounded,
+                          color: Palette.amber, size: 20),
+                      SizedBox(width: 6),
+                      Text(
+                        'Groq Whisper AI Key',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
-                );
-
-                if (confirm == true) {
-                  await authNotifier.logout();
-                  if (context.mounted) {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (context) => const AuthScreen()),
-                      (route) => false,
-                    );
-                  }
-                }
-              },
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Powers bilingual Tamil + English Whisper-large-v3 refinement.\nGet your free key at console.groq.com/keys',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12.5,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _groqApiKeyController,
+                    obscureText: _hideGroqKey,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.08),
+                      hintText: 'Paste gsk_... key here',
+                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _hideGroqKey
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: Colors.white70,
+                        ),
+                        onPressed: () =>
+                            setState(() => _hideGroqKey = !_hideGroqKey),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Tactile(
+                    onTap: _saveGroqApiKey,
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Palette.coral,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Save Groq API Key',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 18),
+
+            // Terminal-Styled Gemini Fallback Key Card
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: isDark ? Palette.charcoalCard : Palette.ink,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.auto_awesome_rounded,
+                          color: Palette.coral, size: 20),
+                      SizedBox(width: 6),
+                      Text(
+                        'Google Gemini Fallback Key',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Optional fallback provider (gemini-2.5-flash) if Groq is unavailable.\nGet your key at aistudio.google.com',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12.5,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _geminiApiKeyController,
+                    obscureText: _hideGeminiKey,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.08),
+                      hintText: 'Paste AIza... key here',
+                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _hideGeminiKey
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: Colors.white70,
+                        ),
+                        onPressed: () =>
+                            setState(() => _hideGeminiKey = !_hideGeminiKey),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Tactile(
+                    onTap: _saveGeminiApiKey,
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Palette.coral,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Save Gemini API Key',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // Log Out Session Button
+            Center(
+              child: TextButton.icon(
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: theme.cardColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      title: const Text('Log Out Session?',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      content: const Text(
+                          'Are you sure you want to log out of your account on this device?'),
+                      actions: [
+                        TextButton(
+                          child: const Text('CANCEL',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                          onPressed: () => Navigator.of(context).pop(false),
+                        ),
+                        TextButton(
+                          child: const Text('LOG OUT',
+                              style: TextStyle(
+                                  color: Palette.coral,
+                                  fontWeight: FontWeight.w700)),
+                          onPressed: () => Navigator.of(context).pop(true),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true) {
+                    await authNotifier.logout();
+                    if (context.mounted) {
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        SlideUpRoute(builder: (_) => const AuthScreen()),
+                        (_) => false,
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.logout_rounded, color: Palette.coral),
+                label: const Text(
+                  'Log Out Session',
+                  style: TextStyle(
+                    color: Palette.coral,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

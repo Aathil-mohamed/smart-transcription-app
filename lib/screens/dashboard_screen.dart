@@ -1,35 +1,83 @@
+import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
 import '../core/config/app_config.dart';
+import '../core/theme/app_design_tokens.dart';
+import '../core/theme/motion_helpers.dart';
+import '../models/transcript.dart';
 import '../providers/auth_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/record_provider.dart';
 import '../providers/upload_provider.dart';
+import '../widgets/language_selector_sheet.dart';
+import 'details_screen.dart';
 import 'recorder_screen.dart';
 import 'saved_list_screen.dart';
-import 'details_screen.dart';
 import 'settings_screen.dart';
-import '../providers/theme_provider.dart';
-import '../widgets/transcript_card.dart';
 
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _eqCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _eqCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _eqCtrl.dispose();
+    super.dispose();
+  }
+
+  String _greetingText() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'GOOD MORNING';
+    if (hour < 17) return 'GOOD AFTERNOON';
+    return 'GOOD EVENING';
+  }
+
+  String _formatTotalDuration(List<TranscriptionModel> list) {
+    final totalSeconds = list.fold<int>(0, (sum, item) => sum + item.duration);
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tintBg = isDark ? Palette.charcoalTint : Palette.paperTint;
+    final config = ref.watch(appConfigProvider);
     final userDetails = ref.watch(userDetailsProvider);
     final transcriptionsAsync = ref.watch(rawTranscriptionsStreamProvider);
+    final recordState = ref.watch(recordNotifierProvider);
     final uploadState = ref.watch(uploadNotifierProvider);
-    final isLoading = uploadState.status == UploadStatus.picking ||
-                      uploadState.status == UploadStatus.transcribing ||
-                      uploadState.status == UploadStatus.saving;
+
+    final isUploading = uploadState.status == UploadStatus.picking ||
+        uploadState.status == UploadStatus.transcribing ||
+        uploadState.status == UploadStatus.saving;
 
     ref.listen<UploadState>(uploadNotifierProvider, (previous, next) {
       if (next.status == UploadStatus.success && next.transcriptionId != null) {
         Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => DetailsScreen(transcriptionId: next.transcriptionId!),
+          SlideUpRoute(
+            builder: (context) =>
+                DetailsScreen(transcriptionId: next.transcriptionId!),
           ),
         ).then((_) {
           ref.read(uploadNotifierProvider.notifier).reset();
@@ -38,17 +86,19 @@ class DashboardScreen extends ConsumerWidget {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
+            backgroundColor: Theme.of(context).cardColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
             title: const Row(
               children: [
-                Icon(Icons.error_outline, color: Colors.redAccent),
+                Icon(Icons.error_outline_rounded, color: Palette.coral),
                 SizedBox(width: 8),
-                Text('Upload Error'),
+                Text('Upload Error', style: TextStyle(fontWeight: FontWeight.w700)),
               ],
             ),
             content: Text(next.errorMessage!),
             actions: [
               TextButton(
-                child: const Text('OK'),
+                child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700)),
                 onPressed: () {
                   Navigator.of(context).pop();
                   ref.read(uploadNotifierProvider.notifier).reset();
@@ -60,568 +110,629 @@ class DashboardScreen extends ConsumerWidget {
       }
     });
 
+    final userName = userDetails.value?.name.isNotEmpty == true
+        ? userDetails.value!.name.split(' ').first
+        : 'User';
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (context) => const SettingsScreen()),
-            ),
-          ),
-        ],
-      ),
       body: Stack(
         children: [
-          RefreshIndicator(
-            onRefresh: () async => ref.refresh(rawTranscriptionsStreamProvider),
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-              // User Welcoming Header
-              userDetails.when(
-                data: (user) => Row(
+          SafeArea(
+            child: transcriptionsAsync.when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: Palette.coral),
+              ),
+              error: (err, _) => Center(
+                child: Text('Error loading dashboard: $err'),
+              ),
+              data: (list) {
+                final sessionCount = list.length.toString().padLeft(2, '0');
+                final capturedDuration = _formatTotalDuration(list);
+                final recentItems = list.take(5).toList();
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 115),
                   children: [
-                    CircleAvatar(
-                      radius: 26,
-                      backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-                      child: Text(
-                        user?.name.isNotEmpty == true ? user!.name[0].toUpperCase() : 'U',
-                        style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 20),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    // Header Row: Greeting + Tactile Profile Avatar with Tune Icon
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Hello, ${user?.name ?? "User"} 👋',
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _greetingText(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.2,
+                                color: Theme.of(context).hintColor,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$userName 👋',
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.4,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          'Ready to transcribe some speech?',
-                          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                        Tactile(
+                          onTap: () => Navigator.push(
+                            context,
+                            SlideUpRoute(builder: (_) => const SettingsScreen()),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor,
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(
+                                color: Theme.of(context).dividerColor,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 17,
+                                  backgroundColor: Palette.emerald,
+                                  child: Text(
+                                    userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.tune_rounded, size: 18),
+                                const SizedBox(width: 8),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-                loading: () => const LinearProgressIndicator(),
-                error: (err, stack) => const Text('Error loading user profile'),
-              ),
-               // API Key Warning Banner
-               FutureBuilder<String>(
-                 future: ref.read(themeNotifierProvider.notifier).getCustomApiKey(),
-                 builder: (context, snapshot) {
-                   if (snapshot.connectionState != ConnectionState.done) {
-                     return const SizedBox.shrink();
-                   }
-                   final key = snapshot.data ?? '';
-                   final isValid = key.isNotEmpty;
-                   if (isValid) return const SizedBox.shrink();
+                    const SizedBox(height: 22),
 
-                   return Container(
-                     margin: const EdgeInsets.only(top: 24),
-                     padding: const EdgeInsets.all(16),
-                     decoration: BoxDecoration(
-                       gradient: LinearGradient(
-                         colors: [
-                           theme.brightness == Brightness.dark 
-                               ? Colors.amber.withValues(alpha: 0.15) 
-                               : Colors.amber.shade50,
-                           theme.brightness == Brightness.dark 
-                               ? Colors.orange.withValues(alpha: 0.1) 
-                               : Colors.orange.shade50,
-                         ],
-                       ),
-                       borderRadius: BorderRadius.circular(20),
-                       border: Border.all(
-                         color: Colors.amber.withValues(alpha: 0.3),
-                         width: 1,
-                       ),
-                     ),
-                     child: Row(
-                       children: [
-                         CircleAvatar(
-                           backgroundColor: Colors.amber.withValues(alpha: 0.2),
-                           child: const Icon(Icons.warning_amber_rounded, color: Colors.amber),
-                         ),
-                         const SizedBox(width: 16),
-                         Expanded(
-                           child: Column(
-                             crossAxisAlignment: CrossAxisAlignment.start,
-                             children: [
-                               Text(
-                                 'Groq API Key Missing',
-                                 style: TextStyle(
-                                   fontWeight: FontWeight.bold,
-                                   fontSize: 15,
-                                   color: theme.brightness == Brightness.dark ? Colors.amber : Colors.orange.shade900,
-                                 ),
-                               ),
-                               const SizedBox(height: 4),
-                               Text(
-                                 'Configure your Groq key in Settings to unlock exact Whisper AI transcription.',
-                                 style: TextStyle(
-                                   fontSize: 12,
-                                   color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                 ),
-                               ),
-                             ],
-                           ),
-                         ),
-                         const SizedBox(width: 8),
-                         ElevatedButton(
-                           style: ElevatedButton.styleFrom(
-                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                             backgroundColor: theme.colorScheme.primary,
-                             foregroundColor: Colors.white,
-                             elevation: 0,
-                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                           ),
-                           onPressed: () => Navigator.of(context).push(
-                             MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                           ),
-                           child: const Text('SET KEY', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                         ),
-                       ],
-                     ),
-                   );
-                 },
-               ),
-              const SizedBox(height: 28),
-
-              // Statistics Block
-              transcriptionsAsync.when(
-                data: (list) {
-                  // Compute stats
-                  final totalCount = list.length;
-                  int totalSecs = 0;
-                  for (var item in list) {
-                    totalSecs += item.duration;
-                  }
-                  final hours = totalSecs ~/ 3600;
-                  final minutes = (totalSecs % 3600) ~/ 60;
-                  final durationText = hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m ${totalSecs % 60}s';
-
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          context: context,
-                          title: 'Total Sessions',
-                          value: totalCount.toString(),
-                          icon: Icons.list_alt,
-                          cardColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-                          iconColor: theme.colorScheme.primary,
+                    // Hardware "Tape Deck" Hero Card
+                    Tactile(
+                      onTap: () => Navigator.push(
+                        context,
+                        SlideUpRoute(builder: (_) => const RecorderScreen()),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: isDark ? Palette.emerald : Palette.ink,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (isDark ? Palette.emerald : Palette.ink)
+                                  .withValues(alpha: 0.24),
+                              blurRadius: 28,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 3.5,
+                                        backgroundColor: Palette.coral,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'STUDIO READY',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Animated mini equalizer
+                                AnimatedBuilder(
+                                  animation: _eqCtrl,
+                                  builder: (_, __) => Row(
+                                    children: List.generate(5, (i) {
+                                      final h = 6 +
+                                          12 *
+                                              (0.5 +
+                                                  0.5 *
+                                                      math.sin(
+                                                        _eqCtrl.value * 2 * math.pi + i,
+                                                      ));
+                                      return Container(
+                                        width: 3,
+                                        height: h,
+                                        margin: const EdgeInsets.only(left: 3),
+                                        decoration: BoxDecoration(
+                                          color: Palette.coral,
+                                          borderRadius: BorderRadius.circular(9),
+                                        ),
+                                      );
+                                    }),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 22),
+                            Row(
+                              children: [
+                                _HeroMetric(
+                                  label: 'SESSIONS',
+                                  value: sessionCount,
+                                ),
+                                const SizedBox(width: 34),
+                                _HeroMetric(
+                                  label: 'CAPTURED',
+                                  value: capturedDuration,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Tap to start bilingual recording',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_forward_rounded,
+                                      color: Palette.coral),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildStatCard(
-                          context: context,
-                          title: 'Transcribed',
-                          value: durationText,
-                          icon: Icons.mic_none,
-                          cardColor: theme.colorScheme.secondary.withValues(alpha: 0.1),
-                          iconColor: theme.colorScheme.secondary,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-                loading: () => const SizedBox(height: 100, child: Center(child: CircularProgressIndicator())),
-                error: (err, stack) => Container(),
-              ),
-              const SizedBox(height: 28),
-
-              // Quick Actions
-              const Text(
-                'Quick Actions',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildQuickActionBtn(
-                        context: context,
-                        label: 'New Recording',
-                        icon: Icons.add_circle,
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (context) => const RecorderScreen()),
-                        ),
-                        color: theme.colorScheme.primary,
-                      ),
-                      _buildQuickActionBtn(
-                        context: context,
-                        label: 'Upload Audio',
-                        icon: Icons.cloud_upload,
-                        onPressed: () => _showLanguageSelectionDialog(context, ref),
-                        color: theme.colorScheme.secondary,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _buildQuickActionBtn(
-                    context: context,
-                    label: 'All Files',
-                    icon: Icons.folder_copy,
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => const SavedListScreen()),
                     ),
-                    color: theme.colorScheme.primary,
-                    isFullWidth: true,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
+                    const SizedBox(height: 18),
 
-              // Recent Transcriptions Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Recent Transcriptions',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => const SavedListScreen()),
-                    ),
-                    child: const Text('View All'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              // Recent List
-              transcriptionsAsync.when(
-                data: (list) {
-                  if (list.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(40),
-                      alignment: Alignment.center,
-                      child: Column(
+                    // Horizontal Action Pill Strip
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
                         children: [
-                          Icon(Icons.mic_off, size: 48, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No transcriptions saved yet.',
-                            style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                          _ActionPill(
+                            icon: Icons.upload_file_rounded,
+                            label: isUploading ? 'Processing...' : 'Upload Audio',
+                            bg: tintBg,
+                            onTap: isUploading
+                                ? () {}
+                                : () async {
+                                    final chosenLang = await showLanguageSheet(
+                                      context,
+                                      config: config,
+                                      currentCode: recordState.selectedLanguageCode,
+                                      actionLabel: 'Select Audio File  →',
+                                    );
+                                    if (chosenLang != null) {
+                                      ref
+                                          .read(uploadNotifierProvider.notifier)
+                                          .pickAndTranscribeAudio(chosenLang);
+                                    }
+                                  },
                           ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  // Take only the 3 most recent entries
-                  final recentList = list.take(3).toList();
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: recentList.length,
-                    itemBuilder: (context, index) {
-                      final item = recentList[index];
-                      return TranscriptCard(
-                        transcription: item,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => DetailsScreen(transcriptionId: item.transcriptionId),
-                          ),
-                        ),
-                        onDelete: () => _confirmDelete(context, ref, item.transcriptionId),
-                      );
-                    },
-                  );
-                },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, stack) => Text('Error loading files: $err'),
-              ),
-            ],
-          ),
-        ),
-      ),
-          if (isLoading)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.7),
-                child: Center(
-                  child: Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(),
-                          const SizedBox(height: 20),
-                          Text(
-                            uploadState.progressText,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Please do not close the app.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          const SizedBox(width: 10),
+                          _ActionPill(
+                            icon: Icons.folder_copy_outlined,
+                            label: 'All Files',
+                            bg: tintBg,
+                            onTap: () => Navigator.push(
+                              context,
+                              SlideUpRoute(builder: (_) => const SavedListScreen()),
                             ),
                           ),
+                          const SizedBox(width: 10),
+                          _ActionPill(
+                            icon: Icons.translate_rounded,
+                            label: config
+                                .findLanguage(recordState.selectedLanguageCode)
+                                .displayName,
+                            bg: tintBg,
+                            onTap: () async {
+                              final chosen = await showLanguageSheet(
+                                context,
+                                config: config,
+                                currentCode: recordState.selectedLanguageCode,
+                                actionLabel: 'Set Active Language  →',
+                              );
+                              if (chosen != null) {
+                                ref
+                                    .read(recordNotifierProvider.notifier)
+                                    .setLanguage(chosen);
+                              }
+                            },
+                          ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Timeline Journal Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Recent Notes',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            SlideUpRoute(builder: (_) => const SavedListScreen()),
+                          ),
+                          child: Text(
+                            'View all →',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Palette.coral : Palette.emerald,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Timeline Items
+                    if (recentItems.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                        ),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 40,
+                                color: Theme.of(context).hintColor.withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'No recordings yet',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tap the REC button below to start your first session.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context).hintColor,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      ...recentItems.map((item) {
+                        final formattedTime =
+                            DateFormat('MMM d • h:mm a').format(item.createdAt).toUpperCase();
+                        final durationStr =
+                            '${(item.duration ~/ 60).toString().padLeft(2, '0')}:${(item.duration % 60).toString().padLeft(2, '0')}';
+                        final langTag =
+                            '${item.language.toUpperCase().substring(0, math.min(item.language.length, 2))} • $durationStr';
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Tactile(
+                            onTap: () => Navigator.push(
+                              context,
+                              SlideUpRoute(
+                                builder: (_) => DetailsScreen(
+                                  transcriptionId: item.transcriptionId,
+                                ),
+                              ),
+                            ),
+                            child: IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Left Timeline Marker
+                                  Column(
+                                    children: [
+                                      Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: const BoxDecoration(
+                                          color: Palette.coral,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Container(
+                                          width: 2,
+                                          margin: const EdgeInsets.symmetric(
+                                            vertical: 6,
+                                          ),
+                                          color: Theme.of(context).dividerColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.all(18),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).cardColor,
+                                        borderRadius: BorderRadius.circular(22),
+                                        border: Border.all(
+                                          color: Theme.of(context).dividerColor,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                formattedTime,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: 0.6,
+                                                  color: Theme.of(context).hintColor,
+                                                ),
+                                              ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 3,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: tintBg,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  langTag,
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            item.title,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            item.transcript.isEmpty
+                                                ? 'No transcript text available'
+                                                : item.transcript,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              height: 1.5,
+                                              color: Theme.of(context).hintColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                );
+              },
+            ),
+          ),
+
+          // Floating Bottom Capsule Navigation Bar
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 20,
+            child: SafeArea(
+              top: false,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    height: 68,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: (isDark ? Palette.charcoalCard : Palette.ink)
+                          .withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(99),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.24),
+                          blurRadius: 24,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          onPressed: () {},
+                          icon: const Icon(Icons.home_filled, color: Colors.white),
+                        ),
+                        Tactile(
+                          onTap: () => Navigator.push(
+                            context,
+                            SlideUpRoute(builder: (_) => const RecorderScreen()),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 26,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Palette.coral,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.mic_rounded, color: Colors.white, size: 19),
+                                SizedBox(width: 6),
+                                Text(
+                                  'REC',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            SlideUpRoute(builder: (_) => const SettingsScreen()),
+                          ),
+                          icon: const Icon(Icons.settings_outlined,
+                              color: Colors.white70),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
+          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => const RecorderScreen()),
-        ),
-        icon: const Icon(Icons.mic),
-        label: const Text('Start Recording'),
       ),
     );
   }
+}
 
-  // Stat Card Widget
-  Widget _buildStatCard({
-    required BuildContext context,
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color cardColor,
-    required Color iconColor,
-  }) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            iconColor.withValues(alpha: 0.15),
-            iconColor.withValues(alpha: 0.03),
+class _HeroMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  const _HeroMetric({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.60),
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.9,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 30,
+            fontWeight: FontWeight.w700,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color bg;
+  final VoidCallback onTap;
+
+  const _ActionPill({
+    required this.icon,
+    required this.label,
+    required this.bg,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tactile(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+            ),
           ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: iconColor.withValues(alpha: 0.12), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: iconColor.withValues(alpha: 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: iconColor.withValues(alpha: 0.1),
-                child: Icon(icon, color: iconColor, size: 14),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.5),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Quick Action Button
-  Widget _buildQuickActionBtn({
-    required BuildContext context,
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-    required Color color,
-    bool isFullWidth = false,
-  }) {
-    final size = MediaQuery.of(context).size;
-    final theme = Theme.of(context);
-    final width = isFullWidth ? (size.width - 40) : (size.width - 56) / 2;
-
-    return Container(
-      width: width,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          colors: [
-            color.withValues(alpha: 0.1),
-            color.withValues(alpha: 0.02),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
         ),
       ),
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          padding: EdgeInsets.symmetric(vertical: isFullWidth ? 18 : 24, horizontal: 20),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          side: BorderSide(color: color.withValues(alpha: 0.15), width: 1.5),
-          backgroundColor: Colors.transparent,
-        ),
-        onPressed: onPressed,
-        child: isFullWidth
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    child: Icon(icon, size: 20, color: color),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    label,
-                    style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 0.2),
-                  ),
-                ],
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    child: Icon(icon, size: 28, color: color),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    label,
-                    style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 0.2),
-                  ),
-                ],
-              ),
-      ),
     );
-  }
-
-  // Language Selection Dialog
-  Future<void> _showLanguageSelectionDialog(BuildContext context, WidgetRef ref) async {
-    final theme = Theme.of(context);
-    String selectedLang = 'bilingual'; // default
-
-    final action = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Select Audio Language'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Choose the language model for transcription:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: theme.colorScheme.onSurface.withValues(alpha: 0.12)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: selectedLang,
-                        isExpanded: true,
-                        dropdownColor: theme.colorScheme.surface,
-                        items: ref.watch(appConfigProvider).languages.map((lang) {
-                          return DropdownMenuItem<String>(
-                            value: lang.code,
-                            child: Text(lang.name),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => selectedLang = val);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('CANCEL'),
-                  onPressed: () => Navigator.of(context).pop(false),
-                ),
-                TextButton(
-                  child: const Text('SELECT FILE'),
-                  onPressed: () => Navigator.of(context).pop(true),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (action == true) {
-      // Trigger picking and transcribing with selected language
-      await ref.read(uploadNotifierProvider.notifier).pickAndTranscribeAudio(selectedLang);
-    }
-  }
-
-  // Delete confirmation
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, String id) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Transcription'),
-        content: const Text('Are you sure you want to permanently delete this transcription?'),
-        actions: [
-          TextButton(
-            child: const Text('CANCEL'),
-            onPressed: () => Navigator.of(context).pop(false),
-          ),
-          TextButton(
-            child: const Text('DELETE', style: TextStyle(color: Colors.redAccent)),
-            onPressed: () => Navigator.of(context).pop(true),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await ref.read(firestoreServiceProvider).deleteTranscription(id);
-    }
   }
 }

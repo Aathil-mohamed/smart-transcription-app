@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
 import '../core/theme/app_design_tokens.dart';
-import '../l10n/app_localizations.dart';
+import '../core/theme/motion_helpers.dart';
 import '../models/transcript.dart';
 import '../providers/record_provider.dart';
 import 'export_screen.dart';
@@ -22,10 +25,15 @@ class DetailsScreen extends ConsumerStatefulWidget {
 class _DetailsScreenState extends ConsumerState<DetailsScreen> {
   final _titleController = TextEditingController();
   final _transcriptController = TextEditingController();
-  
+
   bool _isEditing = false;
   bool _isLoading = true;
   TranscriptionModel? _transcription;
+
+  // Audio simulation / scrubber state
+  bool _playing = false;
+  int _currentSec = 0;
+  Timer? _playbackTimer;
 
   @override
   void initState() {
@@ -35,15 +43,39 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   @override
   void dispose() {
+    _playbackTimer?.cancel();
     _titleController.dispose();
     _transcriptController.dispose();
     super.dispose();
   }
 
-  // Load latest details from Firestore
+  void _togglePlayback() {
+    if (_transcription == null || _transcription!.duration <= 0) return;
+
+    setState(() => _playing = !_playing);
+    if (_playing) {
+      _playbackTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
+        setState(() {
+          if (_currentSec < _transcription!.duration) {
+            _currentSec++;
+          } else {
+            _playing = false;
+            _currentSec = 0;
+            timer.cancel();
+          }
+        });
+      });
+    } else {
+      _playbackTimer?.cancel();
+    }
+  }
+
   Future<void> _loadTranscriptionDetails() async {
     try {
-      final doc = await ref.read(firestoreServiceProvider).getTranscriptionById(widget.transcriptionId);
+      final doc = await ref
+          .read(firestoreServiceProvider)
+          .getTranscriptionById(widget.transcriptionId);
       if (doc != null) {
         setState(() {
           _transcription = doc;
@@ -61,16 +93,19 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
 
   void _showErrorAndExit(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+      SnackBar(content: Text(message), backgroundColor: Palette.coral),
     );
     Navigator.of(context).pop();
   }
 
-  // Save changes to Firestore
   Future<void> _saveChanges() async {
-    if (_titleController.text.trim().isEmpty || _transcriptController.text.trim().isEmpty) {
+    if (_titleController.text.trim().isEmpty ||
+        _transcriptController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fields cannot be empty.'), backgroundColor: Colors.amber),
+        const SnackBar(
+          content: Text('Fields cannot be empty.'),
+          backgroundColor: Palette.amber,
+        ),
       );
       return;
     }
@@ -84,7 +119,7 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
       );
 
       await ref.read(firestoreServiceProvider).updateTranscription(updated);
-      
+
       if (mounted) {
         setState(() {
           _transcription = updated;
@@ -93,170 +128,342 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Changes saved successfully!'), backgroundColor: Colors.teal),
+          const SnackBar(
+            content: Text('Changes saved successfully!'),
+            backgroundColor: Palette.emerald,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save details: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+            content: Text('Failed to save details: $e'),
+            backgroundColor: Palette.coral,
+          ),
         );
       }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+  void _showDiagnostics(BuildContext context) {
+    if (_transcription == null) return;
+    final engine = _transcription!.provider ?? 'groq_whisper';
+    final detectedLang =
+        _transcription!.detectedLanguage ?? _transcription!.language;
+    final segments = _transcription!.segmentCount ??
+        _transcription!.segments?.length ??
+        0;
+    final dropped = _transcription!.droppedSegmentCount ?? 0;
 
-    final String formattedDate = DateFormat('yMMMd').add_jm().format(_transcription!.createdAt);
-    final int minutes = _transcription!.duration ~/ 60;
-    final int seconds = _transcription!.duration % 60;
-    final String durationString = '${minutes}m ${seconds}s';
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Details'),
-        actions: [
-          // Edit / Save toggle buttons
-          if (_isEditing)
-            IconButton(
-              icon: const Icon(Icons.check, color: Colors.tealAccent),
-              onPressed: _saveChanges,
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.edit_note),
-              onPressed: () => setState(() => _isEditing = true),
-            ),
-          
-          // Export Button
-          IconButton(
-            icon: const Icon(Icons.ios_share),
-            onPressed: () {
-              if (_isEditing) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please save your changes before exporting.'), backgroundColor: Colors.amber),
-                );
-              } else {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ExportScreen(transcription: _transcription!),
-                  ),
-                );
-              }
-            },
-          ),
-        ],
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      body: SafeArea(
+      builder: (_) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Meta Header Row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Created: $formattedDate',
-                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-                  ),
-                  Row(
-                    children: [
-                      Icon(Icons.translate, size: 14, color: theme.colorScheme.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        _transcription!.language,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.timer_outlined, size: 14, color: theme.colorScheme.secondary),
-                      const SizedBox(width: 4),
-                      Text(
-                        durationString,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ],
+              const Text(
+                'Technical Diagnostics',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
-              // Debug Details Line
-              if (_transcription!.provider != null) ...[
-                SizedBox(height: context.tokens.spaceSm),
-                Text(
-                  AppLocalizations.of(context)?.transcriptionDetails(
-                        _transcription!.provider!,
-                        _transcription!.detectedLanguage ?? _transcription!.language,
-                        _transcription!.segmentCount ?? _transcription!.segments?.length ?? 0,
-                        _transcription!.droppedSegmentCount ?? 0,
-                      ) ??
-                      'Engine: ${_transcription!.provider} • Detected: ${_transcription!.detectedLanguage ?? _transcription!.language} • Segments: ${_transcription!.segmentCount ?? _transcription!.segments?.length ?? 0} (dropped: ${_transcription!.droppedSegmentCount ?? 0})',
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  'Engine: $engine\n'
+                  'Detected Language: $detectedLang\n'
+                  'Total Segments: $segments\n'
+                  'Filtered Noise / Silence: $dropped segments dropped\n'
+                  'Audio Status: ${_transcription!.audioLocalPath != null ? "Cached Locally" : (_transcription!.audioUrl != null ? "Cloud Storage" : "None")}',
                   style: TextStyle(
-                    fontSize: context.tokens.fontXs,
-                    color: context.tokens.textMuted,
-                    fontStyle: FontStyle.italic,
+                    height: 1.6,
+                    fontSize: 14,
+                    color: Theme.of(context).hintColor,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 12),
-
-              // Title editing block
-              if (_isEditing)
-                TextFormField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Transcription Title',
-                    prefixIcon: Icon(Icons.title),
-                  ),
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                )
-              else
-                Text(
-                  _transcription!.title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
-                ),
-              const SizedBox(height: 20),
-
-              // Transcription text block
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _isEditing
-                      ? TextFormField(
-                          controller: _transcriptController,
-                          keyboardType: TextInputType.multiline,
-                          maxLines: null,
-                          expands: true,
-                          textAlignVertical: TextAlignVertical.top,
-                          decoration: const InputDecoration(
-                            alignLabelWithHint: true,
-                            labelText: 'Transcript Content',
-                            contentPadding: EdgeInsets.all(16),
-                          ),
-                          style: const TextStyle(fontSize: 16, height: 1.5),
-                        )
-                      : SingleChildScrollView(
-                          child: Text(
-                            _transcription!.transcript,
-                            style: const TextStyle(fontSize: 16, height: 1.6, letterSpacing: 0.2),
-                          ),
-                        ),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  String _formatTime(int secs) {
+    final m = secs ~/ 60;
+    final s = secs % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: const Center(
+          child: CircularProgressIndicator(color: Palette.coral),
+        ),
+      );
+    }
+
+    final tx = _transcription!;
+    final dateStr = DateFormat('MMM d, yyyy').format(tx.createdAt).toUpperCase();
+    final langStr = tx.language.toUpperCase();
+    final totalSec = tx.duration;
+    final durationStr = '${totalSec ~/ 60}M ${totalSec % 60}S';
+    final metadataLine = '$dateStr • $langStr • $durationStr';
+
+    final progressVal =
+        totalSec > 0 ? (_currentSec / totalSec).clamp(0.0, 1.0) : 0.0;
+    final timeDisplay = '${_formatTime(_currentSec)} / ${_formatTime(totalSec)}';
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 110),
+              children: [
+                // Top Header: Back Pill + Action Icons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Tactile(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.cardColor,
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(color: theme.dividerColor),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.arrow_back_rounded, size: 18),
+                            SizedBox(width: 6),
+                            Text('Back',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.info_outline_rounded),
+                          onPressed: () => _showDiagnostics(context),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            _isEditing
+                                ? Icons.check_rounded
+                                : Icons.edit_outlined,
+                            color: _isEditing ? Palette.emerald : null,
+                          ),
+                          onPressed: () {
+                            if (_isEditing) {
+                              _saveChanges();
+                            } else {
+                              setState(() => _isEditing = true);
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded),
+                          onPressed: () {
+                            Clipboard.setData(
+                              ClipboardData(text: tx.transcript),
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Copied transcript to clipboard'),
+                                backgroundColor: Palette.emerald,
+                              ),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.ios_share_rounded),
+                          onPressed: () {
+                            if (_isEditing) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please save changes before exporting.'),
+                                  backgroundColor: Palette.amber,
+                                ),
+                              );
+                            } else {
+                              Navigator.push(
+                                context,
+                                SlideUpRoute(
+                                  builder: (_) =>
+                                      ExportScreen(transcription: tx),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Metadata Pill Label
+                Text(
+                  metadataLine,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    color: isDark ? Palette.coral : Palette.emerald,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Title Section (Editable / Display)
+                if (_isEditing)
+                  TextFormField(
+                    controller: _titleController,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Title',
+                      filled: true,
+                      fillColor: theme.cardColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    tx.title,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
+                  ),
+                const SizedBox(height: 22),
+
+                // Selectable Transcript Text (Reader Mode)
+                if (_isEditing)
+                  TextFormField(
+                    controller: _transcriptController,
+                    keyboardType: TextInputType.multiline,
+                    maxLines: null,
+                    style: const TextStyle(fontSize: 18, height: 1.7),
+                    decoration: InputDecoration(
+                      labelText: 'Transcript Content',
+                      filled: true,
+                      fillColor: theme.cardColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  )
+                else
+                  SelectableText(
+                    tx.transcript.isEmpty
+                        ? 'No transcription text recorded.'
+                        : tx.transcript,
+                    style: const TextStyle(fontSize: 18, height: 1.7),
+                  ),
+              ],
+            ),
+          ),
+
+          // Sticky Bottom Mini Audio Player
+          if (totalSec > 0)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 20,
+              child: SafeArea(
+                top: false,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark ? Palette.charcoalCard : Palette.ink,
+                    borderRadius: BorderRadius.circular(99),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.22),
+                        blurRadius: 22,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Tactile(
+                        onTap: _togglePlayback,
+                        child: CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Palette.coral,
+                          child: Icon(
+                            _playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: LinearProgressIndicator(
+                            value: progressVal,
+                            minHeight: 5,
+                            backgroundColor: Colors.white24,
+                            color: Palette.coral,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        timeDisplay,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

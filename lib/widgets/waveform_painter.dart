@@ -1,4 +1,52 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+
+class RibbonWavePainter extends CustomPainter {
+  final double phase;
+  final double amplitude;
+  final Color color;
+
+  const RibbonWavePainter({
+    required this.phase,
+    required this.amplitude,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.6;
+
+    for (int layer = 0; layer < 3; layer++) {
+      final path = Path();
+      final layerColor = color.withValues(alpha: (0.9 - layer * 0.28).clamp(0.1, 1.0));
+      paint.color = layerColor;
+      final midY = size.height / 2;
+
+      for (double x = 0; x <= size.width; x += 4) {
+        final norm = x / size.width;
+        final envelope = math.sin(norm * math.pi);
+        final y = midY +
+            math.sin(norm * 6 + phase + layer * 1.1) *
+                (size.height * 0.36) *
+                amplitude *
+                envelope;
+        if (x == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant RibbonWavePainter old) =>
+      old.phase != phase || old.amplitude != amplitude || old.color != color;
+}
 
 class WaveformPainter extends CustomPainter {
   final List<double> waveHistory;
