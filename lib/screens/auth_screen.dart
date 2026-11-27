@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,6 +86,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<User?>>(authStateProvider, (previous, next) {
+      if (next.value != null && mounted) {
+        Navigator.of(context).pushReplacement(
+          SlideUpRoute(builder: (context) => const DashboardScreen()),
+        );
+      }
+    });
+
     final theme = Theme.of(context);
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState.isLoading;

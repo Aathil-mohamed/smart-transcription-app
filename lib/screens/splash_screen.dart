@@ -46,18 +46,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
 
   // Check auth session and navigate
   void _navigateToNext() {
-    _navigateTimer = Timer(const Duration(milliseconds: 2500), () {
+    _navigateTimer = Timer(const Duration(milliseconds: 2000), () async {
       if (!mounted) return;
 
-      final authState = ref.read(authStateProvider);
+      final authService = ref.read(authServiceProvider);
+      var user = authService.currentUser;
 
-      // Smooth route transition
+      if (user == null) {
+        try {
+          user = await authService.authStateChanges.first.timeout(
+            const Duration(milliseconds: 1500),
+            onTimeout: () => null,
+          );
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+
+      final targetScreen = user != null ? const DashboardScreen() : const AuthScreen();
+
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) {
-            // If user state has value (logged in), redirect to Dashboard, otherwise Login
-            return authState.value != null ? const DashboardScreen() : const AuthScreen();
-          },
+          pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
