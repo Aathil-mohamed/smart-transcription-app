@@ -24,6 +24,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   bool _hideGroqKey = true;
   bool _hideGeminiKey = true;
+  int _secretTapCount = 0;
 
   @override
   void initState() {
@@ -120,9 +121,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Settings',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                _secretTapCount++;
+                if (_secretTapCount >= 5) {
+                  _secretTapCount = 0;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DebugAudioSpikeScreen(),
+                    ),
+                  );
+                }
+              },
+              child: const Text(
+                'Settings',
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+              ),
             ),
             const SizedBox(height: 20),
 
