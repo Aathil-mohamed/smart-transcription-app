@@ -71,12 +71,24 @@ class TranscriptionModel {
       'createdAt': Timestamp.fromDate(createdAt),
     };
 
-    if (audioUrl != null) map['audioUrl'] = audioUrl;
-    if (audioLocalPath != null) map['audioLocalPath'] = audioLocalPath;
-    if (provider != null) map['provider'] = provider;
-    if (detectedLanguage != null) map['detectedLanguage'] = detectedLanguage;
-    if (segmentCount != null) map['segmentCount'] = segmentCount;
-    if (droppedSegmentCount != null) map['droppedSegmentCount'] = droppedSegmentCount;
+    if (audioUrl != null) {
+      map['audioUrl'] = audioUrl;
+    }
+    if (audioLocalPath != null) {
+      map['audioLocalPath'] = audioLocalPath;
+    }
+    if (provider != null) {
+      map['provider'] = provider;
+    }
+    if (detectedLanguage != null) {
+      map['detectedLanguage'] = detectedLanguage;
+    }
+    if (segmentCount != null) {
+      map['segmentCount'] = segmentCount;
+    }
+    if (droppedSegmentCount != null) {
+      map['droppedSegmentCount'] = droppedSegmentCount;
+    }
     if (segments != null && segments!.isNotEmpty) {
       map['segments'] = segments!.map((s) => s.toMap()).toList();
     }
