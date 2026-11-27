@@ -253,27 +253,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                   ),
                                 ),
                                 // Animated mini equalizer
-                                AnimatedBuilder(
-                                  animation: _eqCtrl,
-                                  builder: (_, __) => Row(
-                                    children: List.generate(5, (i) {
-                                      final h = 6 +
-                                          12 *
-                                              (0.5 +
-                                                  0.5 *
-                                                      math.sin(
-                                                        _eqCtrl.value * 2 * math.pi + i,
-                                                      ));
-                                      return Container(
-                                        width: 3,
-                                        height: h,
-                                        margin: const EdgeInsets.only(left: 3),
-                                        decoration: BoxDecoration(
-                                          color: Palette.coral,
-                                          borderRadius: BorderRadius.circular(9),
-                                        ),
-                                      );
-                                    }),
+                                RepaintBoundary(
+                                  child: AnimatedBuilder(
+                                    animation: _eqCtrl,
+                                    builder: (_, __) => Row(
+                                      children: List.generate(5, (i) {
+                                        final h = 6 +
+                                            12 *
+                                                (0.5 +
+                                                    0.5 *
+                                                        math.sin(
+                                                          _eqCtrl.value * 2 * math.pi + i,
+                                                        ));
+                                        return Container(
+                                          width: 3,
+                                          height: h,
+                                          margin: const EdgeInsets.only(left: 3),
+                                          decoration: BoxDecoration(
+                                            color: Palette.coral,
+                                            borderRadius: BorderRadius.circular(9),
+                                          ),
+                                        );
+                                      }),
+                                    ),
                                   ),
                                 ),
                               ],

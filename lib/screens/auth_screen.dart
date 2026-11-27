@@ -99,13 +99,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: AnimatedBuilder(
-                    animation: _waveCtrl,
-                    builder: (_, __) => CustomPaint(
-                      painter: RibbonWavePainter(
-                        phase: _waveCtrl.value * 2 * math.pi,
-                        amplitude: 0.45,
-                        color: Colors.white.withValues(alpha: 0.12),
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _waveCtrl,
+                      builder: (_, __) => CustomPaint(
+                        painter: RibbonWavePainter(
+                          phase: _waveCtrl.value * 2 * math.pi,
+                          amplitude: 0.45,
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
                       ),
                     ),
                   ),

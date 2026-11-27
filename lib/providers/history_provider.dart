@@ -4,7 +4,7 @@ import 'auth_provider.dart';
 import 'record_provider.dart';
 
 // Search keyword state provider
-final searchFilterProvider = StateProvider<String>((ref) => '');
+final searchFilterProvider = StateProvider.autoDispose<String>((ref) => '');
 
 // Base raw stream of transcriptions from firestore
 final rawTranscriptionsStreamProvider = StreamProvider<List<TranscriptionModel>>((ref) {

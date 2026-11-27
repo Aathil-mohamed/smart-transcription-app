@@ -300,15 +300,17 @@ class _RecorderScreenState extends ConsumerState<RecorderScreen>
             SizedBox(
               height: 90,
               width: double.infinity,
-              child: AnimatedBuilder(
-                animation: _waveCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: RibbonWavePainter(
-                    phase: _waveCtrl.value * 2 * math.pi,
-                    amplitude: waveAmplitude,
-                    color: isRecording
-                        ? Palette.coral
-                        : Palette.emerald.withValues(alpha: 0.35),
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _waveCtrl,
+                  builder: (_, __) => CustomPaint(
+                    painter: RibbonWavePainter(
+                      phase: _waveCtrl.value * 2 * math.pi,
+                      amplitude: waveAmplitude,
+                      color: isRecording
+                          ? Palette.coral
+                          : Palette.emerald.withValues(alpha: 0.35),
+                    ),
                   ),
                 ),
               ),
