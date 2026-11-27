@@ -1,6 +1,7 @@
 import 'dart:io';
 import '../../core/config/app_config.dart';
 import '../../models/transcript.dart';
+import 'quality_filter.dart';
 
 class TranscriptionResult {
   final String text;
@@ -9,6 +10,9 @@ class TranscriptionResult {
   final String? detectedLanguage;
   final int segmentCount;
   final int droppedSegmentCount;
+  final double? duration;
+  final int? rawTextLength;
+  final List<SegmentDecision>? decisions;
 
   const TranscriptionResult({
     required this.text,
@@ -17,6 +21,9 @@ class TranscriptionResult {
     this.detectedLanguage,
     this.segmentCount = 0,
     this.droppedSegmentCount = 0,
+    this.duration,
+    this.rawTextLength,
+    this.decisions,
   });
 }
 
@@ -28,5 +35,9 @@ abstract class TranscriptionProvider {
     required LanguageConfig language,
     String? customApiKey,
     List<String>? additionalVocabulary,
+    String? forcedModel,
+    String? customPrompt,
+    bool withoutPrompt = false,
+    bool autoDetectLanguage = false,
   });
 }

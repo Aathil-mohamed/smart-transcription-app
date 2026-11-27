@@ -218,6 +218,9 @@ abstract class AppLocalizations {
   /// **'Engine: {provider} • Detected: {detectedLang} • Segments: {segments} (dropped: {dropped})'**
   String transcriptionDetails(
       String provider, String detectedLang, int segments, int dropped);
+
+  /// Localized string for unknown duration
+  String get durationUnknown;
 }
 
 class _AppLocalizationsDelegate

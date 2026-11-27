@@ -7,10 +7,19 @@
     "maxFileSizeBytes": 26214400,
     "timeoutMinutes": 5,
     "retries": 3,
-    "retryStatuses": [429, 500, 502, 503, 504]
+    "retryStatuses": [
+      429,
+      500,
+      502,
+      503,
+      504
+    ]
   },
   "transcription": {
-    "pipeline": ["groq", "gemini"],
+    "pipeline": [
+      "groq",
+      "gemini"
+    ],
     "maxPromptLengthChars": 200,
     "providers": {
       "groq": {
@@ -44,8 +53,75 @@
       "initialBackoffMs": 1000,
       "maxBackoffMs": 10000,
       "backoffMultiplier": 2.0,
-      "retryStatuses": [429, 500, 502, 503, 504],
+      "retryStatuses": [
+        429,
+        500,
+        502,
+        503,
+        504
+      ],
       "maxRetryAfterSeconds": 60
+    },
+    "matrix": {
+      "delayBetweenRequestsMs": 2100,
+      "variants": [
+        {
+          "id": "variant_a",
+          "name": "a) whisper-large-v3, ta, current prompt",
+          "provider": "groq",
+          "modelType": "standard",
+          "language": "ta-IN",
+          "promptType": "current"
+        },
+        {
+          "id": "variant_b",
+          "name": "b) whisper-large-v3, ta, no prompt",
+          "provider": "groq",
+          "modelType": "standard",
+          "language": "ta-IN",
+          "promptType": "none"
+        },
+        {
+          "id": "variant_c",
+          "name": "c) whisper-large-v3, ta, colloquial prompt",
+          "provider": "groq",
+          "modelType": "standard",
+          "language": "ta-IN",
+          "promptType": "colloquial"
+        },
+        {
+          "id": "variant_d",
+          "name": "d) whisper-large-v3, auto-detect language",
+          "provider": "groq",
+          "modelType": "standard",
+          "language": "auto",
+          "promptType": "current"
+        },
+        {
+          "id": "variant_e",
+          "name": "e) whisper-large-v3, ta, bilingual prompt",
+          "provider": "groq",
+          "modelType": "standard",
+          "language": "ta-IN",
+          "promptType": "bilingual"
+        },
+        {
+          "id": "variant_f",
+          "name": "f) whisper-large-v3-turbo, best prompt",
+          "provider": "groq",
+          "modelType": "fast",
+          "language": "ta-IN",
+          "promptType": "colloquial"
+        },
+        {
+          "id": "variant_g",
+          "name": "g) Gemini fallback",
+          "provider": "gemini",
+          "modelType": "standard",
+          "language": "ta-IN",
+          "promptType": "current"
+        }
+      ]
     }
   },
   "audio": {
@@ -88,9 +164,19 @@
       "promptKey": "bilingual_prompt",
       "promptSampleSentence": "வணக்கம், today we discuss the project update and next steps.",
       "whisperPrompt": "வணக்கம், today we discuss the project update and next steps.",
-      "allowedDetectedLanguages": ["ta", "en"],
+      "allowedDetectedLanguages": [
+        "ta",
+        "en"
+      ],
       "retryLanguage": "ta",
-      "customVocabulary": ["Flutter", "Riverpod", "Groq", "Whisper", "Firestore", "Firebase"]
+      "customVocabulary": [
+        "Flutter",
+        "Riverpod",
+        "Groq",
+        "Whisper",
+        "Firestore",
+        "Firebase"
+      ]
     },
     {
       "id": "ta-IN",
@@ -104,10 +190,18 @@
       "whisperLanguage": "ta",
       "promptKey": "tamil_prompt",
       "promptSampleSentence": "வணக்கம், இன்றைய கூட்டத்தில் திட்டத்தின் முன்னேற்றம் பற்றி பேசுகிறோம்.",
+      "colloquialPromptSampleSentence": "வணக்கம், இன்னைக்கு நாங்க இந்த விஷயத்த பத்தி பேச போறோம்.",
       "whisperPrompt": "வணக்கம், இன்றைய கூட்டத்தில் திட்டத்தின் முன்னேற்றம் பற்றி பேசுகிறோம்.",
-      "allowedDetectedLanguages": ["ta"],
+      "allowedDetectedLanguages": [
+        "ta"
+      ],
       "retryLanguage": "ta",
-      "customVocabulary": ["வணக்கம்", "செயலி", "பதிவு"]
+      "pipeline": ["groq", "gemini"],
+      "customVocabulary": [
+        "வணக்கம்",
+        "செயலி",
+        "பதிவு"
+      ]
     },
     {
       "id": "en-US",
@@ -122,9 +216,15 @@
       "promptKey": "english_prompt",
       "promptSampleSentence": "Hello, today we are discussing the project progress and next milestones.",
       "whisperPrompt": "Hello, today we are discussing the project progress and next milestones.",
-      "allowedDetectedLanguages": ["en"],
+      "allowedDetectedLanguages": [
+        "en"
+      ],
       "retryLanguage": "en",
-      "customVocabulary": ["transcription", "audio", "recording"]
+      "customVocabulary": [
+        "transcription",
+        "audio",
+        "recording"
+      ]
     }
   ],
   "firestore": {

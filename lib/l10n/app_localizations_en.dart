@@ -82,4 +82,7 @@ class AppLocalizationsEn extends AppLocalizations {
       String provider, String detectedLang, int segments, int dropped) {
     return 'Engine: $provider • Detected: $detectedLang • Segments: $segments (dropped: $dropped)';
   }
+
+  @override
+  String get durationUnknown => 'Unknown duration';
 }

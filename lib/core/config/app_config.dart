@@ -168,12 +168,62 @@ class RetryConfig {
   }
 }
 
+class MatrixVariantConfig {
+  final String id;
+  final String name;
+  final String provider;
+  final String modelType;
+  final String language;
+  final String promptType;
+
+  const MatrixVariantConfig({
+    required this.id,
+    required this.name,
+    required this.provider,
+    required this.modelType,
+    required this.language,
+    required this.promptType,
+  });
+
+  factory MatrixVariantConfig.fromJson(Map<String, dynamic> json) {
+    return MatrixVariantConfig(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      provider: json['provider'] as String,
+      modelType: json['modelType'] as String? ?? 'standard',
+      language: json['language'] as String? ?? 'ta-IN',
+      promptType: json['promptType'] as String? ?? 'current',
+    );
+  }
+}
+
+class MatrixConfig {
+  final int delayBetweenRequestsMs;
+  final List<MatrixVariantConfig> variants;
+
+  const MatrixConfig({
+    required this.delayBetweenRequestsMs,
+    required this.variants,
+  });
+
+  factory MatrixConfig.fromJson(Map<String, dynamic> json) {
+    return MatrixConfig(
+      delayBetweenRequestsMs: (json['delayBetweenRequestsMs'] as num?)?.toInt() ?? 2100,
+      variants: (json['variants'] as List<dynamic>?)
+              ?.map((v) => MatrixVariantConfig.fromJson(v as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 class TranscriptionConfig {
   final List<String> pipeline;
   final int maxPromptLengthChars;
   final Map<String, ProviderConfig> providers;
   final QualityFilterConfig qualityFilter;
   final RetryConfig retry;
+  final MatrixConfig? matrix;
 
   const TranscriptionConfig({
     required this.pipeline,
@@ -181,6 +231,7 @@ class TranscriptionConfig {
     required this.providers,
     required this.qualityFilter,
     required this.retry,
+    this.matrix,
   });
 
   factory TranscriptionConfig.fromJson(Map<String, dynamic> json) {
@@ -207,6 +258,7 @@ class TranscriptionConfig {
         json['qualityFilter'] as Map<String, dynamic>,
       ),
       retry: RetryConfig.fromJson(json['retry'] as Map<String, dynamic>),
+      matrix: json['matrix'] != null ? MatrixConfig.fromJson(json['matrix'] as Map<String, dynamic>) : null,
     );
   }
 }
@@ -337,10 +389,12 @@ class LanguageConfig {
   final String? whisperLanguage;
   final String promptKey;
   final String promptSampleSentence;
+  final String? colloquialPromptSampleSentence;
   final String whisperPrompt;
   final List<String> allowedDetectedLanguages;
   final String? retryLanguage;
   final List<String> customVocabulary;
+  final List<String>? pipeline;
 
   const LanguageConfig({
     required this.id,
@@ -354,10 +408,12 @@ class LanguageConfig {
     required this.whisperLanguage,
     required this.promptKey,
     required this.promptSampleSentence,
+    this.colloquialPromptSampleSentence,
     required this.whisperPrompt,
     required this.allowedDetectedLanguages,
     required this.retryLanguage,
     required this.customVocabulary,
+    this.pipeline,
   });
 
   factory LanguageConfig.fromJson(Map<String, dynamic> json) {
@@ -386,6 +442,7 @@ class LanguageConfig {
       whisperLanguage: json['whisperLanguage'] as String?,
       promptKey: json['promptKey'] as String? ?? '${code}_prompt',
       promptSampleSentence: sample,
+      colloquialPromptSampleSentence: json['colloquialPromptSampleSentence'] as String?,
       whisperPrompt: json['whisperPrompt'] as String,
       allowedDetectedLanguages: (json['allowedDetectedLanguages'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -396,6 +453,9 @@ class LanguageConfig {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      pipeline: (json['pipeline'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
     );
   }
 
@@ -407,6 +467,7 @@ class LanguageConfig {
   String buildPrompt({
     List<String>? additionalVocabulary,
     int maxLength = 200,
+    String? promptSampleOverride,
   }) {
     final userWords = (additionalVocabulary ?? const <String>[])
         .map((w) => w.trim())
@@ -420,7 +481,8 @@ class LanguageConfig {
 
     final allVocab = [...staticWords, ...userWords];
     final vocabString = allVocab.isNotEmpty ? ' ${allVocab.join(', ')}.' : '';
-    final combined = '$promptSampleSentence$vocabString'.trim();
+    final sentenceToUse = promptSampleOverride ?? promptSampleSentence;
+    final combined = '$sentenceToUse$vocabString'.trim();
 
     if (combined.length <= maxLength) {
       return combined;

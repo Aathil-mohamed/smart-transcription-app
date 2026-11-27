@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,7 @@ import '../providers/record_provider.dart';
 enum SpikeMode {
   soloAcoustic15s, // 15s Solo Acoustic: 5s quiet + 10s speaking
   hybridSimultaneous30s, // 30s Hybrid: PCM + Native STT
+  matrixEvaluation, // Matrix Test: 7 variants comparison
 }
 
 class AcousticResult {
@@ -113,6 +115,26 @@ WerResult calculateSimpleWer(String reference, String hypothesis) {
   );
 }
 
+class MatrixResultItem {
+  final MatrixVariantConfig variant;
+  final String modelName;
+  final String provider;
+  final int elapsedMs;
+  final String text;
+  final WerResult? werResult;
+  final String? error;
+
+  const MatrixResultItem({
+    required this.variant,
+    required this.modelName,
+    required this.provider,
+    required this.elapsedMs,
+    required this.text,
+    this.werResult,
+    this.error,
+  });
+}
+
 class DebugAudioSpikeScreen extends ConsumerStatefulWidget {
   const DebugAudioSpikeScreen({super.key});
 
@@ -172,6 +194,12 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
   int? _lastTranscriptionElapsedMs;
   String? _transcriptionError;
   WerResult? _werResult;
+
+  // Matrix Evaluation State
+  File? _matrixAudioFile;
+  bool _isMatrixRunning = false;
+  int _currentMatrixVariantIndex = 0;
+  final List<MatrixResultItem> _matrixResults = [];
 
   // Speech to text metrics (for Hybrid mode)
   String _sttStatus = 'Idle';
@@ -678,6 +706,239 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
     }
   }
 
+  // -------------------------------------------------------------
+  // MATRIX TEST RUNNER (Requirement 2)
+  // -------------------------------------------------------------
+  Future<void> _pickMatrixFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
+      if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+        setState(() {
+          _matrixAudioFile = File(result.files.first.path!);
+        });
+        _addLog('Matrix file selected: ${_matrixAudioFile!.path} (${_matrixAudioFile!.lengthSync()} bytes)');
+      }
+    } catch (e) {
+      _addLog('Error picking audio file: $e');
+    }
+  }
+
+  void _useUploadedTestClip() {
+    // Check known uploaded file path
+    const candidatePath = r'C:\Users\Aathil7\.gemini\antigravity\brain\4a0e25fa-b2a0-4db3-96be-8ebd898f9537\.user_uploaded\media_1795756962609_ba1ae8c7.mp4';
+    final candidateFile = File(candidatePath);
+    if (candidateFile.existsSync()) {
+      setState(() {
+        _matrixAudioFile = candidateFile;
+      });
+      _addLog('Loaded uploaded test clip: ${candidateFile.path} (${candidateFile.lengthSync()} bytes)');
+      return;
+    }
+
+    if (_lastCapturedWavFile != null && _lastCapturedWavFile!.existsSync()) {
+      setState(() {
+        _matrixAudioFile = _lastCapturedWavFile;
+      });
+      _addLog('Loaded last captured WAV: ${_lastCapturedWavFile!.path}');
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Test file not found. Please pick a file manually.'), backgroundColor: Palette.coral),
+    );
+  }
+
+  Future<void> _runMatrixTest() async {
+    final file = _matrixAudioFile;
+    if (file == null || !await file.exists()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an audio file first.'), backgroundColor: Palette.coral),
+      );
+      return;
+    }
+
+    final config = ref.read(appConfigProvider);
+    final matrixConfig = config.transcription.matrix;
+    if (matrixConfig == null || matrixConfig.variants.isEmpty) {
+      _addLog('ERROR: No matrix variants configured in app_config.json');
+      return;
+    }
+
+    setState(() {
+      _isMatrixRunning = true;
+      _matrixResults.clear();
+      _currentMatrixVariantIndex = 0;
+    });
+
+    _addLog('====================================================');
+    _addLog('STARTING MATRIX TEST ON FILE: ${_matrixAudioFile!.path}');
+    _addLog('File size: ${_matrixAudioFile!.lengthSync()} bytes | Variants count: ${matrixConfig.variants.length}');
+    _addLog('Delay between requests: ${matrixConfig.delayBetweenRequestsMs}ms (rate limit protection)');
+    _addLog('====================================================');
+
+    final pipeline = ref.read(transcriptionPipelineProvider);
+    final taLanguage = config.findLanguage('ta-IN');
+    final bilingualLanguage = config.findLanguage('bilingual');
+    final refText = _referenceTextController.text.trim();
+
+    for (int i = 0; i < matrixConfig.variants.length; i++) {
+      if (!mounted) break;
+      final variant = matrixConfig.variants[i];
+      setState(() => _currentMatrixVariantIndex = i);
+
+      // Apply delay between requests to protect rate limits (e.g. 30 RPM = 2100ms)
+      if (i > 0 && matrixConfig.delayBetweenRequestsMs > 0) {
+        _addLog('Waiting ${matrixConfig.delayBetweenRequestsMs}ms to respect API rate limits...');
+        await Future.delayed(Duration(milliseconds: matrixConfig.delayBetweenRequestsMs));
+      }
+
+      _addLog('Running variant ${i + 1}/${matrixConfig.variants.length}: "${variant.name}"...');
+      final sw = Stopwatch()..start();
+
+      try {
+        final String modelName;
+        if (variant.provider == 'gemini') {
+          modelName = config.transcription.providers['gemini']?.model ?? 'gemini-2.5-flash';
+        } else {
+          modelName = variant.modelType == 'fast'
+              ? (config.transcription.providers['groq']?.fastModel ?? 'whisper-large-v3-turbo')
+              : (config.transcription.providers['groq']?.model ?? 'whisper-large-v3');
+        }
+
+        final String? promptOverride;
+        final bool withoutPrompt;
+        if (variant.promptType == 'none') {
+          withoutPrompt = true;
+          promptOverride = null;
+        } else if (variant.promptType == 'colloquial') {
+          withoutPrompt = false;
+          promptOverride = taLanguage.buildPrompt(
+            promptSampleOverride: taLanguage.colloquialPromptSampleSentence,
+          );
+        } else if (variant.promptType == 'bilingual') {
+          withoutPrompt = false;
+          promptOverride = bilingualLanguage.buildPrompt();
+        } else {
+          withoutPrompt = false;
+          promptOverride = taLanguage.buildPrompt();
+        }
+
+        final bool autoDetect = variant.language == 'auto';
+        final langToUse = autoDetect ? taLanguage : config.findLanguage(variant.language);
+
+        final provider = pipeline.getProvider(variant.provider);
+        if (provider == null) {
+          throw Exception('Provider "${variant.provider}" not registered in pipeline');
+        }
+
+        final result = await provider.transcribe(
+          audioFile: _matrixAudioFile!,
+          language: langToUse,
+          forcedModel: modelName,
+          customPrompt: promptOverride,
+          withoutPrompt: withoutPrompt,
+          autoDetectLanguage: autoDetect,
+        );
+        sw.stop();
+
+        final wer = refText.isNotEmpty ? calculateSimpleWer(refText, result.text) : null;
+        final item = MatrixResultItem(
+          variant: variant,
+          modelName: modelName,
+          provider: result.provider,
+          elapsedMs: sw.elapsedMilliseconds,
+          text: result.text,
+          werResult: wer,
+        );
+
+        if (mounted) {
+          setState(() {
+            _matrixResults.add(item);
+          });
+        }
+
+        _addLog('-> Variant [${variant.id}] COMPLETED in ${sw.elapsedMilliseconds}ms: ${wer != null ? "WER ${wer.werPercent.toStringAsFixed(1)}%" : ""}');
+        _addLog('   Model: $modelName | Provider: ${result.provider}');
+        _addLog('   Transcript: "${result.text}"');
+      } catch (e) {
+        sw.stop();
+        _addLog('-> Variant [${variant.id}] FAILED in ${sw.elapsedMilliseconds}ms: $e');
+        final item = MatrixResultItem(
+          variant: variant,
+          modelName: variant.provider == 'gemini'
+              ? (config.transcription.providers['gemini']?.model ?? 'gemini-2.5-flash')
+              : (config.transcription.providers['groq']?.model ?? 'whisper-large-v3'),
+          provider: variant.provider,
+          elapsedMs: sw.elapsedMilliseconds,
+          text: '',
+          error: e.toString(),
+        );
+        if (mounted) {
+          setState(() {
+            _matrixResults.add(item);
+          });
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isMatrixRunning = false;
+      });
+    }
+
+    _addLog('====================================================');
+    _addLog('MATRIX TEST COMPLETE: ${_matrixResults.length} variants processed.');
+    _addLog('====================================================');
+  }
+
+  void _copyMatrixResultsToClipboard() {
+    if (_matrixResults.isEmpty) return;
+
+    final buffer = StringBuffer();
+    buffer.writeln('# Audio Transcription Matrix Test Results');
+    buffer.writeln('File: ${_matrixAudioFile?.path ?? "Unknown"}');
+    buffer.writeln('Date: ${DateTime.now().toIso8601String()}');
+    if (_referenceTextController.text.trim().isNotEmpty) {
+      buffer.writeln('Reference Text: "${_referenceTextController.text.trim()}"\n');
+    }
+
+    buffer.writeln('| Variant | Provider | Model | Elapsed | WER (%) | Result Preview |');
+    buffer.writeln('|---|---|---|---|---|---|');
+    for (final item in _matrixResults) {
+      final werStr = item.werResult != null ? '${item.werResult!.werPercent.toStringAsFixed(1)}%' : 'N/A';
+      final preview = item.error != null ? 'ERROR: ${item.error}' : item.text.replaceAll('\n', ' ');
+      final truncated = preview.length > 50 ? '${preview.substring(0, 50)}...' : preview;
+      buffer.writeln('| ${item.variant.name} | ${item.provider} | ${item.modelName} | ${item.elapsedMs}ms | $werStr | $truncated |');
+    }
+
+    buffer.writeln('\n## Full Transcripts\n');
+    for (final item in _matrixResults) {
+      buffer.writeln('### ${item.variant.name}');
+      buffer.writeln('- **Provider**: ${item.provider}');
+      buffer.writeln('- **Model**: ${item.modelName}');
+      buffer.writeln('- **Elapsed Time**: ${item.elapsedMs}ms');
+      if (item.werResult != null) {
+        buffer.writeln('- **WER**: ${item.werResult!.werPercent.toStringAsFixed(1)}% (Ref: ${item.werResult!.refWordCount} words, Hyp: ${item.werResult!.hypWordCount} words, Distance: ${item.werResult!.editDistance})');
+      }
+      if (item.error != null) {
+        buffer.writeln('- **Error**: ${item.error}');
+      } else {
+        buffer.writeln('- **Transcript**:\n```\n${item.text}\n```');
+      }
+      buffer.writeln('');
+    }
+
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Matrix results copied to clipboard!'),
+        backgroundColor: Palette.emerald,
+      ),
+    );
+  }
+
   String _assessClarity(double quiet, double speaking, double snr) {
     if (_nonZeroChunksCount == 0) return 'FAILED: Silent stream.';
     if (snr > 20.0) return 'EXCELLENT: Strong signal clarity with low noise floor (+${snr.toStringAsFixed(1)} dB SNR).';
@@ -727,7 +988,7 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Audio Source & Effects Spike',
+          'Audio Diagnostics & Matrix',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
         ),
         actions: [
@@ -741,31 +1002,43 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Mode Selector
+            // Mode Selector: 3 options
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
               child: Row(
                 children: [
                   Expanded(
                     child: ChoiceChip(
-                      label: const Text('15s Solo Acoustic', style: TextStyle(fontSize: 12)),
+                      label: const Text('15s Acoustic', style: TextStyle(fontSize: 11)),
                       selected: _mode == SpikeMode.soloAcoustic15s,
-                      onSelected: _isRunning
+                      onSelected: (_isRunning || _isMatrixRunning)
                           ? null
                           : (sel) {
                               if (sel) setState(() => _mode = SpikeMode.soloAcoustic15s);
                             },
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   Expanded(
                     child: ChoiceChip(
-                      label: const Text('30s Hybrid (PCM+STT)', style: TextStyle(fontSize: 12)),
+                      label: const Text('30s Hybrid', style: TextStyle(fontSize: 11)),
                       selected: _mode == SpikeMode.hybridSimultaneous30s,
-                      onSelected: _isRunning
+                      onSelected: (_isRunning || _isMatrixRunning)
                           ? null
                           : (sel) {
                               if (sel) setState(() => _mode = SpikeMode.hybridSimultaneous30s);
+                            },
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Matrix (7)', style: TextStyle(fontSize: 11)),
+                      selected: _mode == SpikeMode.matrixEvaluation,
+                      onSelected: (_isRunning || _isMatrixRunning)
+                          ? null
+                          : (sel) {
+                              if (sel) setState(() => _mode = SpikeMode.matrixEvaluation);
                             },
                     ),
                   ),
@@ -773,254 +1046,8 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
               ),
             ),
 
-            // Android Audio Source Selector Chips & AGC Toggle
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-              child: Row(
-                children: [
-                  Text(
-                    'Source:',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: theme.hintColor),
-                  ),
-                  const SizedBox(width: 6),
-                  _buildSourceChip(AndroidAudioSource.defaultSource, 'DEFAULT'),
-                  const SizedBox(width: 4),
-                  _buildSourceChip(AndroidAudioSource.mic, 'MIC'),
-                  const SizedBox(width: 4),
-                  _buildSourceChip(AndroidAudioSource.voiceRecognition, 'VOICE_REC'),
-                  const Spacer(),
-                  FilterChip(
-                    label: Text(
-                      'AGC: ${_autoGainEnabled ? "ON" : "OFF"}',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: _autoGainEnabled ? Palette.emerald : theme.hintColor,
-                      ),
-                    ),
-                    selected: _autoGainEnabled,
-                    visualDensity: VisualDensity.compact,
-                    onSelected: _isRunning
-                        ? null
-                        : (val) {
-                            setState(() => _autoGainEnabled = val);
-                          },
-                  ),
-                ],
-              ),
-            ),
-
-            // Hardware Audio Effects Availability Strip
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 1, 16, 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildEffectBadge('NS', _noiseSuppressorAvailable),
-                  _buildEffectBadge('AEC', _acousticEchoCancelerAvailable),
-                  _buildEffectBadge('AGC', _automaticGainControlAvailable),
-                ],
-              ),
-            ),
-
-            // Real-time Status Card & Stage Prompt
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark ? Palette.charcoalTint : Palette.paperTint,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isQuietStage
-                        ? Colors.amber
-                        : isSpeakingStage
-                            ? Palette.emerald
-                            : theme.dividerColor,
-                    width: (isQuietStage || isSpeakingStage) ? 1.5 : 1.0,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Stage Prompt Banner
-                    if (_isRunning && _mode == SpikeMode.soloAcoustic15s) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: isQuietStage
-                              ? Colors.amber.withValues(alpha: 0.18)
-                              : Palette.emerald.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          isQuietStage
-                              ? '🤫 STAGE 1: STAY QUIET (${5 - elapsedSecs}s) - Measuring Noise Floor...'
-                              : '🗣️ STAGE 2: SPEAK NOW (${_secondsRemaining}s) - Measuring Voice Level...',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
-                            color: isQuietStage ? Colors.amber[800] : Palette.emerald,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _isRunning ? 'RUNNING (${_secondsRemaining}s remaining)' : 'TEST IDLE',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: _isRunning ? Palette.emerald : theme.hintColor,
-                            fontSize: 11,
-                          ),
-                        ),
-                        Text(
-                          'Peak: ${_peakDbfs.toStringAsFixed(1)} dBFS',
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    // VU Meter Bar
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: Stack(
-                        children: [
-                          Container(height: 14, color: theme.dividerColor.withValues(alpha: 0.3)),
-                          AnimatedFractionallySizedBox(
-                            duration: const Duration(milliseconds: 60),
-                            widthFactor: normalizedVU,
-                            child: Container(
-                              height: 14,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Palette.emerald,
-                                    normalizedVU > 0.75 ? Palette.coral : Palette.emerald,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'RMS: ${_currentDbfs.toStringAsFixed(1)} dBFS',
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                        ),
-                        _buildAudioHealthBadge(),
-                      ],
-                    ),
-
-                    // STT Status Section for Hybrid Mode
-                    if (_mode == SpikeMode.hybridSimultaneous30s) ...[
-                      const Divider(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'STT: $_sttStatus',
-                            style: TextStyle(fontSize: 11, color: theme.hintColor),
-                          ),
-                          if (_firstTextTimestampMs != null)
-                            Text(
-                              '1st word: +${_firstTextTimestampMs}ms',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Palette.emerald,
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (_lastRecognizedText.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          'Text: "$_lastRecognizedText"',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
-                    ],
-
-                    // Results Comparison Strip across all tested sources & AGC settings
-                    if (_sourceResults.isNotEmpty) ...[
-                      const Divider(height: 12),
-                      const Text(
-                        'Acoustic Calibration Comparison:',
-                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: _sourceResults.entries.map((e) {
-                          final res = e.value;
-                          final nonZeroStr = res.firstNonZeroMs != null ? "+${res.firstNonZeroMs}ms" : "none";
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: theme.cardColor,
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: theme.dividerColor),
-                            ),
-                            child: Text(
-                              '${res.source.name.toUpperCase()} [AGC ${res.autoGain ? "ON" : "OFF"}]: 1st $nonZeroStr | Noise ${res.avgQuietDbfs.toStringAsFixed(1)} | Voice ${res.avgSpeakingDbfs.toStringAsFixed(1)} (SNR +${res.dynamicRangeDb.toStringAsFixed(1)} dB)',
-                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-
-            // Start / Stop Button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-              child: SizedBox(
-                width: double.infinity,
-                height: 40,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isRunning ? Palette.coral : Palette.emerald,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: _isRunning ? _stopTest : _startTest,
-                  icon: Icon(_isRunning ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 20),
-                  label: Text(
-                    _isRunning
-                        ? 'STOP TEST'
-                        : 'START ${_mode == SpikeMode.soloAcoustic15s ? "15s ACOUSTIC TEST" : "30s HYBRID TEST"}',
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                ),
-              ),
-            ),
-
-            // Solo Acoustic 15s Controls: Reference Text, Transcribe WAV Button & WER
-            if (_mode == SpikeMode.soloAcoustic15s) ...[
+            // If Matrix Mode: Show File Picker & Matrix Controls
+            if (_mode == SpikeMode.matrixEvaluation) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
                 child: Container(
@@ -1033,15 +1060,51 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // File Selection Row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _matrixAudioFile != null
+                                  ? 'File: ${_matrixAudioFile!.path.split(Platform.pathSeparator).last} (${(_matrixAudioFile!.lengthSync() / 1024).toStringAsFixed(1)} KB)'
+                                  : 'No audio file selected for matrix',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _matrixAudioFile != null ? Palette.emerald : theme.hintColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            onPressed: _isMatrixRunning ? null : _pickMatrixFile,
+                            icon: const Icon(Icons.audio_file_rounded, size: 14),
+                            label: const Text('Pick File', style: TextStyle(fontSize: 10.5)),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            icon: const Icon(Icons.history_rounded, size: 16),
+                            tooltip: 'Use Uploaded Test Clip',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _isMatrixRunning ? null : _useUploadedTestClip,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+
                       // Reference Text Input Field
                       TextField(
                         controller: _referenceTextController,
-                        enabled: !_isRunning && !_isTranscribing,
+                        enabled: !_isMatrixRunning,
                         style: const TextStyle(fontSize: 11),
                         decoration: InputDecoration(
                           isDense: true,
-                          labelText: 'Reference text (type what you read aloud)',
-                          hintText: 'e.g. வணக்கம், testing microphone clarity...',
+                          labelText: 'Reference text (for rough WER calculation)',
+                          hintText: 'Type expected Tamil text...',
                           hintStyle: TextStyle(fontSize: 10.5, color: theme.hintColor),
                           labelStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1058,122 +1121,117 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
                         ),
                         onChanged: (_) => _updateWer(logToOutput: false),
                       ),
+                      const SizedBox(height: 6),
 
-                      // Captured WAV Transcription Action
-                      if (_lastCapturedWavFile != null) ...[
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Captured: ${_lastCapturedSource?.name.toUpperCase()} [AGC ${_lastCapturedAgc ? "ON" : "OFF"}] (${(_lastCapturedDurationMs ?? 0) ~/ 1000}s audio)',
-                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            ElevatedButton.icon(
+                      // Run Matrix Button
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Palette.emerald,
+                                backgroundColor: _isMatrixRunning ? Palette.coral : Palette.emerald,
                                 foregroundColor: Colors.white,
                                 visualDensity: VisualDensity.compact,
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
-                              onPressed: (_isRunning || _isTranscribing) ? null : _transcribeCapturedTest,
-                              icon: _isTranscribing
+                              onPressed: _isMatrixRunning ? null : _runMatrixTest,
+                              icon: _isMatrixRunning
                                   ? const SizedBox(
-                                      width: 12,
-                                      height: 12,
+                                      width: 14,
+                                      height: 14,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                     )
-                                  : const Icon(Icons.record_voice_over_rounded, size: 14),
+                                  : const Icon(Icons.compare_arrows_rounded, size: 16),
                               label: Text(
-                                _isTranscribing ? 'Transcribing...' : 'Transcribe this test',
-                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                                _isMatrixRunning
+                                    ? 'Running variant ${_currentMatrixVariantIndex + 1}/7...'
+                                    : 'RUN MATRIX TEST (7 VARIANTS)',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                               ),
                             ),
+                          ),
+                          if (_matrixResults.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.copy_all_rounded, size: 18),
+                              tooltip: 'Copy Matrix Results (Markdown Table)',
+                              onPressed: _copyMatrixResultsToClipboard,
+                            ),
                           ],
-                        ),
-                      ],
+                        ],
+                      ),
 
-                      // Transcription Result Display
-                      if (_lastTranscriptionResult != null) ...[
-                        const SizedBox(height: 5),
+                      // Results side-by-side / card list
+                      if (_matrixResults.isNotEmpty) ...[
+                        const SizedBox(height: 6),
                         Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF14171A) : Colors.white,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: theme.dividerColor),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Provider: ${_lastTranscriptionProvider ?? "groq"}',
-                                    style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Palette.emerald),
-                                  ),
-                                  Text(
-                                    'Elapsed: ${_lastTranscriptionElapsedMs ?? 0}ms',
-                                    style: TextStyle(fontSize: 9.5, color: theme.hintColor),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Result: "$_lastTranscriptionResult"',
-                                style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      // Transcription Error Display
-                      if (_transcriptionError != null) ...[
-                        const SizedBox(height: 5),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Palette.coral.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Palette.coral.withValues(alpha: 0.4)),
-                          ),
-                          child: Text(
-                            'Transcription error: $_transcriptionError',
-                            style: const TextStyle(fontSize: 10, color: Palette.coral, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-
-                      // Simple Word Error Rate (WER) Display
-                      if (_werResult != null) ...[
-                        const SizedBox(height: 5),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Palette.emerald.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Palette.emerald.withValues(alpha: 0.4)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Word Error Rate (WER): ${_werResult!.werPercent.toStringAsFixed(1)}%',
-                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Palette.emerald),
-                              ),
-                              Text(
-                                'Rough measure - normalized whitespace and case only (Ref: ${_werResult!.refWordCount} words, Hyp: ${_werResult!.hypWordCount} words, Distance: ${_werResult!.editDistance})',
-                                style: TextStyle(fontSize: 9, color: theme.hintColor),
-                              ),
-                            ],
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _matrixResults.length,
+                            itemBuilder: (context, idx) {
+                              final res = _matrixResults[idx];
+                              final isErr = res.error != null;
+                              return Container(
+                                margin: const EdgeInsets.symmetric(vertical: 2),
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF14171A) : Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: isErr ? Palette.coral : theme.dividerColor),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            res.variant.name,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: isErr ? Palette.coral : Palette.emerald,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${res.elapsedMs}ms',
+                                          style: TextStyle(fontSize: 9.5, color: theme.hintColor),
+                                        ),
+                                        if (res.werResult != null) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: Palette.emerald.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              'WER: ${res.werResult!.werPercent.toStringAsFixed(1)}%',
+                                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Palette.emerald),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      isErr ? 'Error: ${res.error}' : (res.text.isNotEmpty ? '"${res.text}"' : '(empty transcript)'),
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontStyle: isErr ? FontStyle.normal : FontStyle.italic,
+                                        color: isErr ? Palette.coral : null,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -1181,6 +1239,406 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
                   ),
                 ),
               ),
+            ] else ...[
+              // Audio Source & Effects Controls for Acoustic / Hybrid modes
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                child: Row(
+                  children: [
+                    Text(
+                      'Source:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: theme.hintColor),
+                    ),
+                    const SizedBox(width: 6),
+                    _buildSourceChip(AndroidAudioSource.defaultSource, 'DEFAULT'),
+                    const SizedBox(width: 4),
+                    _buildSourceChip(AndroidAudioSource.mic, 'MIC'),
+                    const SizedBox(width: 4),
+                    _buildSourceChip(AndroidAudioSource.voiceRecognition, 'VOICE_REC'),
+                    const Spacer(),
+                    FilterChip(
+                      label: Text(
+                        'AGC: ${_autoGainEnabled ? "ON" : "OFF"}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: _autoGainEnabled ? Palette.emerald : theme.hintColor,
+                        ),
+                      ),
+                      selected: _autoGainEnabled,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: _isRunning
+                          ? null
+                          : (val) {
+                              setState(() => _autoGainEnabled = val);
+                            },
+                    ),
+                  ],
+                ),
+              ),
+
+              // Hardware Audio Effects Availability Strip
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 1, 16, 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildEffectBadge('NS', _noiseSuppressorAvailable),
+                    _buildEffectBadge('AEC', _acousticEchoCancelerAvailable),
+                    _buildEffectBadge('AGC', _automaticGainControlAvailable),
+                  ],
+                ),
+              ),
+
+              // Real-time Status Card & Stage Prompt
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Palette.charcoalTint : Palette.paperTint,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isQuietStage
+                          ? Colors.amber
+                          : isSpeakingStage
+                              ? Palette.emerald
+                              : theme.dividerColor,
+                      width: (isQuietStage || isSpeakingStage) ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_isRunning && _mode == SpikeMode.soloAcoustic15s) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: isQuietStage
+                                ? Colors.amber.withValues(alpha: 0.18)
+                                : Palette.emerald.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            isQuietStage
+                                ? '🤫 STAGE 1: STAY QUIET (${5 - elapsedSecs}s) - Measuring Noise Floor...'
+                                : '🗣️ STAGE 2: SPEAK NOW (${_secondsRemaining}s) - Measuring Voice Level...',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                              color: isQuietStage ? Colors.amber[800] : Palette.emerald,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _isRunning ? 'RUNNING (${_secondsRemaining}s remaining)' : 'TEST IDLE',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: _isRunning ? Palette.emerald : theme.hintColor,
+                              fontSize: 11,
+                            ),
+                          ),
+                          Text(
+                            'Peak: ${_peakDbfs.toStringAsFixed(1)} dBFS',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+
+                      // VU Meter Bar
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: Stack(
+                          children: [
+                            Container(height: 14, color: theme.dividerColor.withValues(alpha: 0.3)),
+                            AnimatedFractionallySizedBox(
+                              duration: const Duration(milliseconds: 60),
+                              widthFactor: normalizedVU,
+                              child: Container(
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Palette.emerald,
+                                      normalizedVU > 0.75 ? Palette.coral : Palette.emerald,
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'RMS: ${_currentDbfs.toStringAsFixed(1)} dBFS',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                          _buildAudioHealthBadge(),
+                        ],
+                      ),
+
+                      // STT Status Section for Hybrid Mode
+                      if (_mode == SpikeMode.hybridSimultaneous30s) ...[
+                        const Divider(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'STT: $_sttStatus',
+                              style: TextStyle(fontSize: 11, color: theme.hintColor),
+                            ),
+                            if (_firstTextTimestampMs != null)
+                              Text(
+                                '1st word: +${_firstTextTimestampMs}ms',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Palette.emerald,
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (_lastRecognizedText.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            'Text: "$_lastRecognizedText"',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
+
+                      // Results Comparison Strip across all tested sources & AGC settings
+                      if (_sourceResults.isNotEmpty) ...[
+                        const Divider(height: 12),
+                        const Text(
+                          'Acoustic Calibration Comparison:',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: _sourceResults.entries.map((e) {
+                            final res = e.value;
+                            final nonZeroStr = res.firstNonZeroMs != null ? "+${res.firstNonZeroMs}ms" : "none";
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: theme.cardColor,
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(color: theme.dividerColor),
+                              ),
+                              child: Text(
+                                '${res.source.name.toUpperCase()} [AGC ${res.autoGain ? "ON" : "OFF"}]: 1st $nonZeroStr | Noise ${res.avgQuietDbfs.toStringAsFixed(1)} | Voice ${res.avgSpeakingDbfs.toStringAsFixed(1)} (SNR +${res.dynamicRangeDb.toStringAsFixed(1)} dB)',
+                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              // Start / Stop Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isRunning ? Palette.coral : Palette.emerald,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: _isRunning ? _stopTest : _startTest,
+                    icon: Icon(_isRunning ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 20),
+                    label: Text(
+                      _isRunning
+                          ? 'STOP TEST'
+                          : 'START ${_mode == SpikeMode.soloAcoustic15s ? "15s ACOUSTIC TEST" : "30s HYBRID TEST"}',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Solo Acoustic 15s Controls: Reference Text, Transcribe WAV Button & WER
+              if (_mode == SpikeMode.soloAcoustic15s) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark ? Palette.charcoalTint : Palette.paperTint,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: _referenceTextController,
+                          enabled: !_isRunning && !_isTranscribing,
+                          style: const TextStyle(fontSize: 11),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: 'Reference text (type what you read aloud)',
+                            hintText: 'e.g. வணக்கம், testing microphone clarity...',
+                            hintStyle: TextStyle(fontSize: 10.5, color: theme.hintColor),
+                            labelStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                            suffixIcon: _referenceTextController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 14),
+                                    onPressed: () {
+                                      _referenceTextController.clear();
+                                      _updateWer(logToOutput: false);
+                                    },
+                                  )
+                                : null,
+                          ),
+                          onChanged: (_) => _updateWer(logToOutput: false),
+                        ),
+                        if (_lastCapturedWavFile != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Captured: ${_lastCapturedSource?.name.toUpperCase()} [AGC ${_lastCapturedAgc ? "ON" : "OFF"}] (${(_lastCapturedDurationMs ?? 0) ~/ 1000}s audio)',
+                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Palette.emerald,
+                                  foregroundColor: Colors.white,
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                ),
+                                onPressed: (_isRunning || _isTranscribing) ? null : _transcribeCapturedTest,
+                                icon: _isTranscribing
+                                    ? const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.record_voice_over_rounded, size: 14),
+                                label: Text(
+                                  _isTranscribing ? 'Transcribing...' : 'Transcribe this test',
+                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (_lastTranscriptionResult != null) ...[
+                          const SizedBox(height: 5),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF14171A) : Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: theme.dividerColor),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Provider: ${_lastTranscriptionProvider ?? "groq"}',
+                                      style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Palette.emerald),
+                                    ),
+                                    Text(
+                                      'Elapsed: ${_lastTranscriptionElapsedMs ?? 0}ms',
+                                      style: TextStyle(fontSize: 9.5, color: theme.hintColor),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Result: "$_lastTranscriptionResult"',
+                                  style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (_transcriptionError != null) ...[
+                          const SizedBox(height: 5),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Palette.coral.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Palette.coral.withValues(alpha: 0.4)),
+                            ),
+                            child: Text(
+                              'Transcription error: $_transcriptionError',
+                              style: const TextStyle(fontSize: 10, color: Palette.coral, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                        if (_werResult != null) ...[
+                          const SizedBox(height: 5),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Palette.emerald.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Palette.emerald.withValues(alpha: 0.4)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Word Error Rate (WER): ${_werResult!.werPercent.toStringAsFixed(1)}%',
+                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Palette.emerald),
+                                ),
+                                Text(
+                                  'Rough measure - normalized whitespace and case only (Ref: ${_werResult!.refWordCount} words, Hyp: ${_werResult!.hypWordCount} words, Distance: ${_werResult!.editDistance})',
+                                  style: TextStyle(fontSize: 9, color: theme.hintColor),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
 
             // Diagnostics Log Window Header
@@ -1214,7 +1672,7 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
                 child: _logEntries.isEmpty
                     ? Center(
                         child: Text(
-                          'Select audio source above and tap "START 15s ACOUSTIC TEST".\nTest each source (DEFAULT, MIC, VOICE_REC) with AGC ON/OFF to compare clarity & WER.',
+                          'Select mode above: 15s Acoustic, 30s Hybrid, or Matrix Test (7 variants).\nResults and diagnostics appear here live.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: theme.hintColor, fontSize: 11),
                         ),
@@ -1225,8 +1683,8 @@ class _DebugAudioSpikeScreenState extends ConsumerState<DebugAudioSpikeScreen> {
                         itemBuilder: (context, index) {
                           final text = _logEntries[index];
                           final isError = text.contains('ERROR') || text.contains('FAIL');
-                          final isSuccess = text.contains('EXCELLENT') || text.contains('SUCCESS') || text.contains('RESULTS') || text.contains('COMPLETED');
-                          final isStage = text.contains('QUIET STAGE') || text.contains('SPEAKING STAGE');
+                          final isSuccess = text.contains('EXCELLENT') || text.contains('SUCCESS') || text.contains('RESULTS') || text.contains('COMPLETED') || text.contains('COMPLETE');
+                          final isStage = text.contains('QUIET STAGE') || text.contains('SPEAKING STAGE') || text.contains('Running variant');
 
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 1.0),

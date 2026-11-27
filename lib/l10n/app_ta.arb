@@ -19,6 +19,7 @@
   "errorEmptyResult": "ஆடியோவிலிருந்து எந்த பேச்சையும் அடையாளம் காண முடியவில்லை.",
   "errorFileMissing": "தேர்ந்தெடுக்கப்பட்ட ஆடியோ கோப்பு சாதனத்தில் கிடைக்கவில்லை.",
   "errorUnknown": "எதிர்பாராத பிழை ஏற்பட்டது.",
+  "durationUnknown": "தெரியாத நேரம்",
   "transcriptionDetails": "இயந்திரம்: {provider} • கண்டறியப்பட்டது: {detectedLang} • பகுதிகள்: {segments} (நீக்கப்பட்டது: {dropped})",
   "@transcriptionDetails": {
     "description": "Debug details in Tamil",

@@ -19,6 +19,7 @@
   "errorEmptyResult": "No speech could be recognized from the audio.",
   "errorFileMissing": "The selected audio file was not found on the device.",
   "errorUnknown": "An unexpected error occurred.",
+  "durationUnknown": "Unknown duration",
   "transcriptionDetails": "Engine: {provider} • Detected: {detectedLang} • Segments: {segments} (dropped: {dropped})",
   "@transcriptionDetails": {
     "description": "Debug details for transcription provider, detected language, and segments count",

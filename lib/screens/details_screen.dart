@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../core/theme/app_design_tokens.dart';
 import '../core/theme/motion_helpers.dart';
+import '../l10n/app_localizations.dart';
 import '../models/transcript.dart';
 import '../providers/record_provider.dart';
 import 'export_screen.dart';
@@ -227,7 +228,9 @@ class _DetailsScreenState extends ConsumerState<DetailsScreen> {
     final dateStr = DateFormat('MMM d, yyyy').format(tx.createdAt).toUpperCase();
     final langStr = tx.language.toUpperCase();
     final totalSec = tx.duration;
-    final durationStr = '${totalSec ~/ 60}M ${totalSec % 60}S';
+    final durationStr = totalSec > 0
+        ? '${totalSec ~/ 60}M ${totalSec % 60}S'
+        : (AppLocalizations.of(context)?.durationUnknown ?? 'Unknown duration');
     final metadataLine = '$dateStr • $langStr • $durationStr';
 
     final progressVal =

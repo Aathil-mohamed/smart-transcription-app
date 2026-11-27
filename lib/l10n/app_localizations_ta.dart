@@ -81,4 +81,7 @@ class AppLocalizationsTa extends AppLocalizations {
       String provider, String detectedLang, int segments, int dropped) {
     return 'இயந்திரம்: $provider • கண்டறியப்பட்டது: $detectedLang • பகுதிகள்: $segments (நீக்கப்பட்டது: $dropped)';
   }
+
+  @override
+  String get durationUnknown => 'தெரியாத நேரம்';
 }

@@ -52,14 +52,24 @@ class TranscriptionPipeline {
     }
   }
 
+  /// Returns registered provider by ID (e.g. 'groq', 'gemini').
+  TranscriptionProvider? getProvider(String id) => _providers[id];
+
   /// Tries the configured transcription providers in order.
+  /// Uses per-language provider order if configured, falling back to global order.
   Future<TranscriptionResult> transcribe({
     required File audioFile,
     required LanguageConfig language,
     String? customApiKey,
     List<String>? additionalVocabulary,
+    String? forcedModel,
+    String? customPrompt,
+    bool withoutPrompt = false,
+    bool autoDetectLanguage = false,
   }) async {
-    final pipelineOrder = _config.transcription.pipeline;
+    final pipelineOrder = (language.pipeline != null && language.pipeline!.isNotEmpty)
+        ? language.pipeline!
+        : _config.transcription.pipeline;
     ServiceException? lastException;
 
     for (final providerId in pipelineOrder) {
@@ -76,6 +86,10 @@ class TranscriptionPipeline {
           language: language,
           customApiKey: customApiKey,
           additionalVocabulary: additionalVocabulary,
+          forcedModel: forcedModel,
+          customPrompt: customPrompt,
+          withoutPrompt: withoutPrompt,
+          autoDetectLanguage: autoDetectLanguage,
         );
         debugPrint('Transcription succeeded via provider: $providerId');
         return result;

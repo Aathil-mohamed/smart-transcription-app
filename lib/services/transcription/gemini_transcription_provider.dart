@@ -31,6 +31,10 @@ class GeminiTranscriptionProvider implements TranscriptionProvider {
     required LanguageConfig language,
     String? customApiKey,
     List<String>? additionalVocabulary,
+    String? forcedModel,
+    String? customPrompt,
+    bool withoutPrompt = false,
+    bool autoDetectLanguage = false,
   }) async {
     if (!await audioFile.exists()) {
       throw const ServiceException(ServiceErrorCode.fileMissing);
@@ -61,21 +65,33 @@ class GeminiTranscriptionProvider implements TranscriptionProvider {
     final audioBytes = await audioFile.readAsBytes();
     final base64Audio = base64Encode(audioBytes);
 
+    final modelToUse = forcedModel ?? providerConfig.model;
     final url = Uri.parse(
-      '${providerConfig.baseUrl}/${providerConfig.model}:generateContent?key=$apiKey',
+      '${providerConfig.baseUrl}/$modelToUse:generateContent?key=$apiKey',
     );
+
+    final String ext = audioFile.path.split('.').last.toLowerCase();
+    final String mimeType = ext == 'wav'
+        ? 'audio/wav'
+        : ext == 'mp3'
+            ? 'audio/mp3'
+            : 'audio/mp4';
+
+    final promptText = withoutPrompt
+        ? 'Transcribe this audio accurately. Output strictly the transcription text without commentary, timestamps, or quotes.'
+        : (customPrompt ??
+            'Transcribe this audio accurately. Target language: ${autoDetectLanguage ? "auto-detect" : language.displayName}. Output strictly the transcription text without commentary, timestamps, or quotes.');
 
     final requestBody = json.encode({
       'contents': [
         {
           'parts': [
             {
-              'text':
-                  'Transcribe this audio accurately. Target language: ${language.displayName}. Output strictly the transcription text without commentary, timestamps, or quotes.',
+              'text': promptText,
             },
             {
               'inline_data': {
-                'mime_type': 'audio/mp4',
+                'mime_type': mimeType,
                 'data': base64Audio,
               },
             },

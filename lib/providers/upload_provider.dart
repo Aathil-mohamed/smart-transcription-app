@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
 import '../core/errors/service_error.dart';
+import '../core/utils/audio_duration_helper.dart';
 import '../models/transcript.dart';
 import '../providers/auth_provider.dart';
 import '../providers/record_provider.dart';
@@ -121,17 +122,20 @@ class UploadNotifier extends StateNotifier<UploadState> {
         }
       }
 
-      // 2. Begin transcription using WhisperService
+      // 2. Begin transcription using TranscriptionPipeline
       state = state.copyWith(
         status: UploadStatus.transcribing,
         progressText: 'Uploading and transcribing using AI...',
       );
 
-      final whisperService = _ref.read(whisperServiceProvider);
+      final pipeline = _ref.read(transcriptionPipelineProvider);
+      final config = _ref.read(appConfigProvider);
+      final langConfig = config.findLanguage(languageCode);
 
-      final transcribedText = await whisperService.transcribeAudio(
-        filePath: uploadPath,
-        languageCode: languageCode,
+      final audioFile = File(uploadPath);
+      final txResult = await pipeline.transcribe(
+        audioFile: audioFile,
+        language: langConfig,
       );
 
       // Clean up temporary file
@@ -146,13 +150,20 @@ class UploadNotifier extends StateNotifier<UploadState> {
         }
       }
 
-      if (transcribedText.trim().isEmpty) {
+      if (txResult.text.trim().isEmpty) {
         state = state.copyWith(
           status: UploadStatus.error,
           errorMessage: 'No speech could be detected or transcribed in the audio file.',
         );
         return;
       }
+
+      // Read real duration from audio file metadata or fallback
+      final durationSec = await AudioDurationHelper.getDuration(
+        audioFile: audioFile,
+        segments: txResult.segments,
+        providerDuration: txResult.duration,
+      );
 
       // 3. Save transcript to Firestore
       state = state.copyWith(
@@ -170,18 +181,25 @@ class UploadNotifier extends StateNotifier<UploadState> {
       }
 
       final String docId = const Uuid().v4();
-      final config = _ref.read(appConfigProvider);
-      final langConfig = config.findLanguage(languageCode);
 
       final transcription = TranscriptionModel(
         transcriptionId: docId,
         userId: currentUserId,
         title: 'Uploaded Audio - ${file.name}',
-        transcript: transcribedText,
+        transcript: txResult.text,
         language: langConfig.displayName,
-        duration: 0,
+        duration: durationSec,
+        provider: txResult.provider,
+        detectedLanguage: txResult.detectedLanguage,
+        segmentCount: txResult.segmentCount,
+        droppedSegmentCount: txResult.droppedSegmentCount,
+        segments: txResult.segments,
         createdAt: DateTime.now(),
       );
+
+      if (kDebugMode) {
+        debugPrint('[Upload] Text length saved to Firestore: ${transcription.transcript.length} chars (duration: ${durationSec}s, docId: $docId)');
+      }
 
       await _ref.read(firestoreServiceProvider).saveTranscription(transcription);
 
