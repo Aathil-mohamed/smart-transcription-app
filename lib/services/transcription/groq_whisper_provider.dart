@@ -88,6 +88,7 @@ class GroqWhisperProvider implements TranscriptionProvider {
             maxLength: _config.transcription.maxPromptLengthChars,
           );
 
+    final uploadWatch = Stopwatch()..start();
     final streamedResponse = await _networkHelper.sendWithRetry(
       _client,
       () async {
@@ -109,6 +110,8 @@ class GroqWhisperProvider implements TranscriptionProvider {
         return request;
       },
     );
+
+    debugPrint('[Timing] upload -> first response byte: ${uploadWatch.elapsedMilliseconds}ms');
 
     final responseBody = await streamedResponse.stream.bytesToString();
 

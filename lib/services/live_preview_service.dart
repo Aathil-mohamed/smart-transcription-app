@@ -44,8 +44,12 @@ class LivePreviewService {
     Function(String text)? onTextUpdated,
     Function(String reason)? onUnavailable,
   }) async {
-    _onTextUpdated = onTextUpdated;
-    _onUnavailable = onUnavailable;
+    if (onTextUpdated != null) _onTextUpdated = onTextUpdated;
+    if (onUnavailable != null) _onUnavailable = onUnavailable;
+
+    if (_isAvailable && _status != LivePreviewStatus.unavailable) {
+      return true;
+    }
 
     try {
       _isAvailable = await _speech.initialize(
@@ -66,7 +70,13 @@ class LivePreviewService {
     }
   }
 
-  Future<void> startListening({required LanguageConfig language}) async {
+  Future<void> startListening({
+    required LanguageConfig language,
+    Function(String text)? onTextUpdated,
+  }) async {
+    if (onTextUpdated != null) {
+      _onTextUpdated = onTextUpdated;
+    }
     if (!_isAvailable) return;
 
     _currentLanguage = language;

@@ -27,6 +27,13 @@ class _RecorderScreenState extends ConsumerState<RecorderScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     )..repeat();
+
+    // Step 2: Warm up recorder, microphone permission, and speech recognizer on screen open
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(recordNotifierProvider.notifier).warmUp();
+      }
+    });
   }
 
   @override

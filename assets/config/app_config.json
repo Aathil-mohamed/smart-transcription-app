@@ -16,11 +16,14 @@
       "groq": {
         "baseUrl": "https://api.groq.com/openai/v1/audio/transcriptions",
         "model": "whisper-large-v3",
+        "fastModel": "whisper-large-v3-turbo",
         "temperature": 0.0,
         "responseFormat": "verbose_json",
         "timestampGranularities": "segment",
         "timeoutSeconds": 300,
-        "maxUploadBytes": 26214400
+        "maxUploadBytes": 26214400,
+        "requestsPerMinuteLimit": 30,
+        "audioSecondsPerHourLimit": 7200
       },
       "gemini": {
         "baseUrl": "https://generativelanguage.googleapis.com/v1beta/models",

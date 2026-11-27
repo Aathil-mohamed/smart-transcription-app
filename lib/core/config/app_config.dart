@@ -52,20 +52,26 @@ class ApiConfig {
 class ProviderConfig {
   final String baseUrl;
   final String model;
+  final String? fastModel;
   final double temperature;
   final String responseFormat;
   final String timestampGranularities;
   final int timeoutSeconds;
   final int maxUploadBytes;
+  final int requestsPerMinuteLimit;
+  final int audioSecondsPerHourLimit;
 
   const ProviderConfig({
     required this.baseUrl,
     required this.model,
+    this.fastModel,
     required this.temperature,
     this.responseFormat = 'verbose_json',
     this.timestampGranularities = 'segment',
     required this.timeoutSeconds,
     required this.maxUploadBytes,
+    this.requestsPerMinuteLimit = 30,
+    this.audioSecondsPerHourLimit = 7200,
   });
 
   factory ProviderConfig.fromJson(Map<String, dynamic> json) {
@@ -80,11 +86,14 @@ class ProviderConfig {
     return ProviderConfig(
       baseUrl: json['baseUrl'] as String,
       model: json['model'] as String,
+      fastModel: json['fastModel'] as String?,
       temperature: (json['temperature'] as num).toDouble(),
       responseFormat: json['responseFormat'] as String? ?? 'verbose_json',
       timestampGranularities: json['timestampGranularities'] as String? ?? 'segment',
       timeoutSeconds: (json['timeoutSeconds'] as num).toInt(),
       maxUploadBytes: (json['maxUploadBytes'] as num).toInt(),
+      requestsPerMinuteLimit: (json['requestsPerMinuteLimit'] as num?)?.toInt() ?? 30,
+      audioSecondsPerHourLimit: (json['audioSecondsPerHourLimit'] as num?)?.toInt() ?? 7200,
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/config/app_config.dart';
 import '../../core/errors/service_error.dart';
@@ -86,6 +87,7 @@ class GeminiTranscriptionProvider implements TranscriptionProvider {
       },
     });
 
+    final uploadWatch = Stopwatch()..start();
     final streamedResponse = await _networkHelper.sendWithRetry(
       _client,
       () async {
@@ -95,6 +97,8 @@ class GeminiTranscriptionProvider implements TranscriptionProvider {
         return request;
       },
     );
+
+    debugPrint('[Timing] upload -> first response byte: ${uploadWatch.elapsedMilliseconds}ms');
 
     final responseBody = await streamedResponse.stream.bytesToString();
 

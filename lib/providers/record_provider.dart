@@ -18,10 +18,19 @@ import '../services/transcription/transcription_provider.dart';
 import '../services/whisper_service.dart';
 import 'auth_provider.dart';
 
+import 'package:http/http.dart' as http;
+
+final sharedHttpClientProvider = Provider<http.Client>((ref) {
+  final client = http.Client();
+  ref.onDispose(() => client.close());
+  return client;
+});
+
 final transcriptionPipelineProvider = Provider<TranscriptionPipeline>((ref) {
   final config = ref.watch(appConfigProvider);
   final secrets = ref.watch(secretsServiceProvider);
-  return TranscriptionPipeline.create(config, secrets);
+  final client = ref.watch(sharedHttpClientProvider);
+  return TranscriptionPipeline.create(config, secrets, client: client);
 });
 
 final speechServiceProvider = Provider<SpeechService>((ref) {
@@ -121,6 +130,9 @@ class RecordNotifier extends StateNotifier<RecordState> {
   Timer? _timer;
   Timer? _amplitudeTimer;
   String? _localAudioPath;
+  bool? _isMicPermissionGranted;
+  bool _isWarmingUp = false;
+  bool _isWarmedUp = false;
 
   RecordNotifier(this._ref) : super(RecordState.initial());
 
@@ -129,6 +141,31 @@ class RecordNotifier extends StateNotifier<RecordState> {
     _stopTimers();
     _audioRecorder.dispose();
     super.dispose();
+  }
+
+  /// Pre-warms microphone permissions and the native speech recognizer on screen open.
+  Future<void> warmUp() async {
+    if (_isWarmingUp || _isWarmedUp) return;
+    _isWarmingUp = true;
+    try {
+      _isMicPermissionGranted = await _audioRecorder.hasPermission();
+
+      final isLivePreviewEnabled = _ref.read(settingsRepositoryProvider).isLivePreviewEnabled;
+      if (isLivePreviewEnabled) {
+        final livePreview = _ref.read(livePreviewServiceProvider);
+        await livePreview.initialize(
+          onUnavailable: (reason) {
+            debugPrint('Live preview unavailable: $reason');
+          },
+        );
+      }
+      _isWarmedUp = true;
+      debugPrint('[Timing] Warm-up complete: mic permission cached, speech engine initialized');
+    } catch (e) {
+      debugPrint('Warm up error: $e');
+    } finally {
+      _isWarmingUp = false;
+    }
   }
 
   void setLanguage(String code) {
@@ -172,20 +209,33 @@ class RecordNotifier extends StateNotifier<RecordState> {
 
   // Start Recording Session
   Future<void> startRecording() async {
+    final tapWatch = Stopwatch()..start();
+    bool firstAmplitudeLogged = false;
+    bool firstLiveTextLogged = false;
+
+    final config = _ref.read(appConfigProvider);
+    final maxDuration = config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes);
+    final isLivePreviewEnabled = _ref.read(settingsRepositoryProvider).isLivePreviewEnabled;
+
+    // 1. Show recording UI immediately on tap
+    state = state.copyWith(
+      status: RecordStatus.recording,
+      errorMessage: null,
+      liveText: isLivePreviewEnabled ? 'Listening...' : 'Recording in progress...',
+      waveHistory: const [],
+      durationSecs: 0,
+      maxDurationSecs: maxDuration,
+      canRetry: false,
+      failedAudioPath: null,
+    );
+
+    // 2. Early network connection pre-warm to transcription host
+    unawaited(_ref.read(transcriptionPipelineProvider).prewarmConnection());
+
     try {
-      final config = _ref.read(appConfigProvider);
-      final maxDuration = config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes);
-
-      state = state.copyWith(
-        errorMessage: null,
-        liveText: '',
-        maxDurationSecs: maxDuration,
-        canRetry: false,
-        failedAudioPath: null,
-      );
-
-      // 1. Check microphone permission
-      final hasMicPermission = await _audioRecorder.hasPermission();
+      // 3. Verify microphone permission (uses cached result if pre-warmed)
+      final hasMicPermission = _isMicPermissionGranted ?? await _audioRecorder.hasPermission();
+      _isMicPermissionGranted = hasMicPermission;
       if (!hasMicPermission) {
         state = state.copyWith(
           errorMessage: 'Microphone permission denied.',
@@ -194,7 +244,7 @@ class RecordNotifier extends StateNotifier<RecordState> {
         return;
       }
 
-      // 2. Prepare documents directory storage path
+      // 4. Prepare documents directory storage path
       final appDir = await getApplicationDocumentsDirectory();
       final recordingsDir = Directory('${appDir.path}/${config.audio.recordingsFolder}');
       if (!await recordingsDir.exists()) {
@@ -204,7 +254,7 @@ class RecordNotifier extends StateNotifier<RecordState> {
       final filename = '${config.audio.fileNamePrefix}${const Uuid().v4()}${config.audio.fileExtension}';
       _localAudioPath = '${recordingsDir.path}/$filename';
 
-      // 3. Start audio recorder entirely from config
+      // 5. Start audio recorder FIRST
       await _audioRecorder.start(
         RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -218,36 +268,48 @@ class RecordNotifier extends StateNotifier<RecordState> {
         path: _localAudioPath!,
       );
 
-      // 4. Optional live preview
-      final livePreview = _ref.read(livePreviewServiceProvider);
-      final isLivePreviewEnabled = _ref.read(settingsRepositoryProvider).isLivePreviewEnabled;
+      debugPrint('[Timing] tap -> recorder started: ${tapWatch.elapsedMilliseconds}ms');
 
+      // 6. Start timers with first amplitude measurement
+      _startTimers(
+        onFirstAmplitude: () {
+          if (!firstAmplitudeLogged) {
+            firstAmplitudeLogged = true;
+            debugPrint('[Timing] tap -> first amplitude event: ${tapWatch.elapsedMilliseconds}ms');
+          }
+        },
+      );
+
+      // 7. Start preview AFTER recorder starts
       if (isLivePreviewEnabled) {
-        final initialized = await livePreview.initialize(
+        final livePreview = _ref.read(livePreviewServiceProvider);
+        final langConfig = config.findLanguage(state.selectedLanguageCode);
+
+        if (!livePreview.isAvailable) {
+          await livePreview.initialize(
+            onUnavailable: (reason) {
+              debugPrint('Live preview unavailable: $reason');
+            },
+          );
+        }
+
+        await livePreview.startListening(
+          language: langConfig,
           onTextUpdated: (text) {
             if (state.status == RecordStatus.recording) {
+              if (text.trim().isNotEmpty && !firstLiveTextLogged) {
+                firstLiveTextLogged = true;
+                debugPrint('[Timing] tap -> first live text: ${tapWatch.elapsedMilliseconds}ms');
+              }
               state = state.copyWith(liveText: text);
             }
           },
-          onUnavailable: (reason) {
-            debugPrint('Live preview unavailable: $reason');
-          },
         );
 
-        if (initialized) {
-          final langConfig = config.findLanguage(state.selectedLanguageCode);
-          await livePreview.startListening(language: langConfig);
-        }
+        debugPrint('[Timing] tap -> speech engine ready: ${tapWatch.elapsedMilliseconds}ms');
       }
-
-      state = state.copyWith(
-        status: RecordStatus.recording,
-        liveText: isLivePreviewEnabled ? 'Listening...' : 'Recording in progress...',
-        waveHistory: [],
-      );
-
-      _startTimers();
     } catch (e) {
+      _stopTimers();
       state = state.copyWith(
         status: RecordStatus.idle,
         errorMessage: 'Failed to start recording: $e',
@@ -292,6 +354,8 @@ class RecordNotifier extends StateNotifier<RecordState> {
       return false;
     }
 
+    final stopWatch = Stopwatch()..start();
+
     try {
       state = state.copyWith(status: RecordStatus.finalizing);
       _stopTimers();
@@ -318,6 +382,7 @@ class RecordNotifier extends StateNotifier<RecordState> {
       final userVocab = _ref.read(settingsRepositoryProvider).customVocabulary;
       TranscriptionResult? pipelineResult;
       try {
+        debugPrint('[Timing] stop -> upload started: ${stopWatch.elapsedMilliseconds}ms');
         pipelineResult = await pipeline.transcribe(
           audioFile: File(finalAudioPath),
           language: langConfig,
@@ -372,7 +437,9 @@ class RecordNotifier extends StateNotifier<RecordState> {
           createdAt: DateTime.now(),
         );
 
+        final saveWatch = Stopwatch()..start();
         await _ref.read(firestoreServiceProvider).saveTranscription(transcription);
+        debugPrint('[Timing] response -> saved: ${saveWatch.elapsedMilliseconds}ms');
       }
 
       state = RecordState.initial(config.audio.calculateMaxDurationSeconds(config.api.maxFileSizeBytes));
@@ -448,7 +515,7 @@ class RecordNotifier extends StateNotifier<RecordState> {
     }
   }
 
-  void _startTimers() {
+  void _startTimers({VoidCallback? onFirstAmplitude}) {
     final config = _ref.read(appConfigProvider);
 
     _timer = Timer.periodic(Duration(milliseconds: config.audio.secondsIntervalMs), (timer) {
@@ -463,6 +530,7 @@ class RecordNotifier extends StateNotifier<RecordState> {
 
     _amplitudeTimer = Timer.periodic(Duration(milliseconds: config.audio.amplitudeIntervalMs), (timer) async {
       final amp = await _audioRecorder.getAmplitude();
+      onFirstAmplitude?.call();
       final minDb = config.audio.minDb;
       final maxDb = config.audio.maxDb;
       final range = maxDb - minDb;
