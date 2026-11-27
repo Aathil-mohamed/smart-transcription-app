@@ -13,19 +13,39 @@ import '../providers/auth_provider.dart';
 import '../providers/record_provider.dart';
 import '../services/secrets_service.dart';
 
-enum UploadStatus { idle, picking, transcribing, saving, success, error }
+enum UploadStatus { idle, picking, transcribing, streaming, saving, success, error }
 
 class UploadState {
   final UploadStatus status;
   final String progressText;
   final String? errorMessage;
   final String? transcriptionId;
+  final String? fileName;
+  final int? fileSize;
+  final String? languageCode;
+  final String? languageDisplayName;
+  final String liveText;
+  final List<TranscriptSegment> revealedSegments;
+  final List<TranscriptSegment> allSegments;
+  final int? durationSec;
+  final String? provider;
+  final String? detectedLanguage;
 
   UploadState({
     required this.status,
     required this.progressText,
     this.errorMessage,
     this.transcriptionId,
+    this.fileName,
+    this.fileSize,
+    this.languageCode,
+    this.languageDisplayName,
+    this.liveText = '',
+    this.revealedSegments = const [],
+    this.allSegments = const [],
+    this.durationSec,
+    this.provider,
+    this.detectedLanguage,
   });
 
   factory UploadState.initial() {
@@ -40,12 +60,32 @@ class UploadState {
     String? progressText,
     String? errorMessage,
     String? transcriptionId,
+    String? fileName,
+    int? fileSize,
+    String? languageCode,
+    String? languageDisplayName,
+    String? liveText,
+    List<TranscriptSegment>? revealedSegments,
+    List<TranscriptSegment>? allSegments,
+    int? durationSec,
+    String? provider,
+    String? detectedLanguage,
   }) {
     return UploadState(
       status: status ?? this.status,
       progressText: progressText ?? this.progressText,
       errorMessage: errorMessage,
       transcriptionId: transcriptionId ?? this.transcriptionId,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
+      languageCode: languageCode ?? this.languageCode,
+      languageDisplayName: languageDisplayName ?? this.languageDisplayName,
+      liveText: liveText ?? this.liveText,
+      revealedSegments: revealedSegments ?? this.revealedSegments,
+      allSegments: allSegments ?? this.allSegments,
+      durationSec: durationSec ?? this.durationSec,
+      provider: provider ?? this.provider,
+      detectedLanguage: detectedLanguage ?? this.detectedLanguage,
     );
   }
 }
@@ -55,7 +95,8 @@ class UploadNotifier extends StateNotifier<UploadState> {
 
   UploadNotifier(this._ref) : super(UploadState.initial());
 
-  Future<void> pickAndTranscribeAudio(String languageCode) async {
+  /// Step 1: Check API key and pick an audio file.
+  Future<PlatformFile?> pickAudioFile() async {
     state = state.copyWith(
       status: UploadStatus.picking,
       progressText: 'Checking API key...',
@@ -63,51 +104,68 @@ class UploadNotifier extends StateNotifier<UploadState> {
       transcriptionId: null,
     );
 
+    // Check valid Groq API key
+    final bool hasKey = await _ref.read(secretsServiceProvider).hasValidApiKey();
+    if (!hasKey) {
+      state = state.copyWith(
+        status: UploadStatus.error,
+        errorMessage:
+            'No Groq API Key configured!\n\n'
+            'To enable transcription:\n'
+            '1. Open Settings in this app\n'
+            '2. Enter your API key under "Enter Groq API Key"\n'
+            '3. Tap SAVE API KEY\n\n'
+            'Then try uploading again.',
+      );
+      return null;
+    }
+
+    state = state.copyWith(progressText: 'Opening file picker...');
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      state = UploadState.initial();
+      return null;
+    }
+
+    return result.files.first;
+  }
+
+  /// Step 2: Transcribe the given file with live progressive streaming to state.
+  Future<void> startTranscribingFile(PlatformFile file, String languageCode) async {
+    final String? path = file.path;
+    if (path == null) {
+      state = state.copyWith(
+        status: UploadStatus.error,
+        errorMessage: 'Could not access the selected file.',
+      );
+      return;
+    }
+
+    final config = _ref.read(appConfigProvider);
+    final langConfig = config.findLanguage(languageCode);
+
+    state = state.copyWith(
+      status: UploadStatus.transcribing,
+      progressText: 'Uploading audio to AI model...',
+      fileName: file.name,
+      fileSize: file.size,
+      languageCode: languageCode,
+      languageDisplayName: langConfig.displayName,
+      liveText: '',
+      revealedSegments: const [],
+      allSegments: const [],
+      errorMessage: null,
+    );
+
     String? tempUploadPath;
 
     try {
-      // 0. Check that a valid Groq API key is configured
-      final bool hasKey = await _ref.read(secretsServiceProvider).hasValidApiKey();
-
-      if (!hasKey) {
-        state = state.copyWith(
-          status: UploadStatus.error,
-          errorMessage:
-              'No Groq API Key configured!\n\n'
-              'To enable transcription:\n'
-              '1. Open Settings in this app\n'
-              '2. Enter your API key under "Enter Groq API Key"\n'
-              '3. Tap SAVE API KEY\n\n'
-              'Then try uploading again.',
-        );
-        return;
-      }
-
-      // 1. Pick audio file
-      state = state.copyWith(progressText: 'Opening file picker...');
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.audio,
-      );
-
-      if (result == null || result.files.isEmpty) {
-        state = UploadState.initial();
-        return;
-      }
-
-      final PlatformFile file = result.files.first;
-      final String? path = file.path;
-
-      if (path == null) {
-        state = state.copyWith(
-          status: UploadStatus.error,
-          errorMessage: 'Could not access the selected file.',
-        );
-        return;
-      }
-
       String uploadPath = path;
 
-      // Handle common extension issues if any
+      // Handle common extension issues if any (e.g. temporary copy)
       final String extension = file.extension?.toLowerCase() ?? '';
       if (['aac', 'amr', 'opus'].contains(extension)) {
         try {
@@ -122,17 +180,13 @@ class UploadNotifier extends StateNotifier<UploadState> {
         }
       }
 
-      // 2. Begin transcription using TranscriptionPipeline
+      final pipeline = _ref.read(transcriptionPipelineProvider);
+      final audioFile = File(uploadPath);
+
       state = state.copyWith(
-        status: UploadStatus.transcribing,
-        progressText: 'Uploading and transcribing using AI...',
+        progressText: 'Transcribing speech with ${langConfig.displayName}...',
       );
 
-      final pipeline = _ref.read(transcriptionPipelineProvider);
-      final config = _ref.read(appConfigProvider);
-      final langConfig = config.findLanguage(languageCode);
-
-      final audioFile = File(uploadPath);
       final txResult = await pipeline.transcribe(
         audioFile: audioFile,
         language: langConfig,
@@ -158,6 +212,44 @@ class UploadNotifier extends StateNotifier<UploadState> {
         return;
       }
 
+      // Step 2a: Progressive live reveal of segments
+      if (txResult.segments.isNotEmpty) {
+        state = state.copyWith(
+          status: UploadStatus.streaming,
+          progressText: 'Streaming live transcription...',
+          allSegments: txResult.segments,
+          provider: txResult.provider,
+          detectedLanguage: txResult.detectedLanguage,
+        );
+
+        final buffer = StringBuffer();
+        final revealed = <TranscriptSegment>[];
+
+        for (int i = 0; i < txResult.segments.length; i++) {
+          final seg = txResult.segments[i];
+          revealed.add(seg);
+          if (buffer.isNotEmpty) buffer.write(' ');
+          buffer.write(seg.text.trim());
+
+          state = state.copyWith(
+            liveText: buffer.toString(),
+            revealedSegments: List.unmodifiable(revealed),
+          );
+
+          // Paced streaming so user visually experiences live transcription reveal
+          if (i < txResult.segments.length - 1) {
+            await Future.delayed(const Duration(milliseconds: 130));
+          }
+        }
+      } else {
+        state = state.copyWith(
+          status: UploadStatus.streaming,
+          liveText: txResult.text,
+          provider: txResult.provider,
+          detectedLanguage: txResult.detectedLanguage,
+        );
+      }
+
       // Read real duration from audio file metadata or fallback
       final durationSec = await AudioDurationHelper.getDuration(
         audioFile: audioFile,
@@ -165,10 +257,11 @@ class UploadNotifier extends StateNotifier<UploadState> {
         providerDuration: txResult.duration,
       );
 
-      // 3. Save transcript to Firestore
+      // Step 3: Save transcript to Firestore
       state = state.copyWith(
         status: UploadStatus.saving,
-        progressText: 'Saving transcription to database...',
+        progressText: 'Saving note to database...',
+        durationSec: durationSec,
       );
 
       final String? currentUserId = _ref.read(authNotifierProvider).value?.uid;
@@ -205,8 +298,12 @@ class UploadNotifier extends StateNotifier<UploadState> {
 
       state = state.copyWith(
         status: UploadStatus.success,
-        progressText: 'Success!',
+        progressText: 'Transcription Complete!',
         transcriptionId: docId,
+        durationSec: durationSec,
+        liveText: txResult.text,
+        allSegments: txResult.segments,
+        revealedSegments: txResult.segments,
       );
     } on ServiceException catch (e) {
       if (tempUploadPath != null) {
@@ -234,6 +331,14 @@ class UploadNotifier extends StateNotifier<UploadState> {
         status: UploadStatus.error,
         errorMessage: 'An unexpected error occurred during upload: $e',
       );
+    }
+  }
+
+  /// Convenience wrapper that picks and transcribes in one call
+  Future<void> pickAndTranscribeAudio(String languageCode) async {
+    final file = await pickAudioFile();
+    if (file != null) {
+      await startTranscribingFile(file, languageCode);
     }
   }
 

@@ -77,11 +77,44 @@ class AppLocalizationsTa extends AppLocalizations {
   String get errorUnknown => 'எதிர்பாராத பிழை ஏற்பட்டது.';
 
   @override
+  String get durationUnknown => 'தெரியாத நேரம்';
+
+  @override
   String transcriptionDetails(
       String provider, String detectedLang, int segments, int dropped) {
     return 'இயந்திரம்: $provider • கண்டறியப்பட்டது: $detectedLang • பகுதிகள்: $segments (நீக்கப்பட்டது: $dropped)';
   }
 
   @override
-  String get durationUnknown => 'தெரியாத நேரம்';
+  String get uploadLiveTitle => 'நேரடி ஆடியோ டிரான்ஸ்கிரிப்ஷன்';
+
+  @override
+  String get uploadConnecting => 'AI மாதிரியுடன் இணைகிறது...';
+
+  @override
+  String get uploadTranscribing => 'நேரடி டிரான்ஸ்கிரிப்ஷன் செய்யப்படுகிறது...';
+
+  @override
+  String get uploadSaving => 'குறிப்பு சேமிக்கப்படுகிறது...';
+
+  @override
+  String get uploadComplete => 'டிரான்ஸ்கிரிப்ஷன் முடிந்தது';
+
+  @override
+  String get uploadFailed => 'டிரான்ஸ்கிரிப்ஷன் தோல்வியடைந்தது';
+
+  @override
+  String get viewNote => 'குறிப்பைக் காண்க';
+
+  @override
+  String get copyText => 'உரையை நகலெடு';
+
+  @override
+  String get textCopied => 'உரை நகலெடுக்கப்பட்டது';
+
+  @override
+  String get done => 'முடிந்தது';
+
+  @override
+  String get tryAgain => 'மீண்டும் முயற்சி செய்';
 }

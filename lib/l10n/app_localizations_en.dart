@@ -78,11 +78,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorUnknown => 'An unexpected error occurred.';
 
   @override
+  String get durationUnknown => 'Unknown duration';
+
+  @override
   String transcriptionDetails(
       String provider, String detectedLang, int segments, int dropped) {
     return 'Engine: $provider • Detected: $detectedLang • Segments: $segments (dropped: $dropped)';
   }
 
   @override
-  String get durationUnknown => 'Unknown duration';
+  String get uploadLiveTitle => 'Live Audio Transcription';
+
+  @override
+  String get uploadConnecting => 'Connecting to AI model...';
+
+  @override
+  String get uploadTranscribing => 'Transcribing speech live...';
+
+  @override
+  String get uploadSaving => 'Saving note to database...';
+
+  @override
+  String get uploadComplete => 'Transcription Complete';
+
+  @override
+  String get uploadFailed => 'Transcription Failed';
+
+  @override
+  String get viewNote => 'View Note';
+
+  @override
+  String get copyText => 'Copy Text';
+
+  @override
+  String get textCopied => 'Transcript copied to clipboard';
+
+  @override
+  String get done => 'Done';
+
+  @override
+  String get tryAgain => 'Try Again';
 }

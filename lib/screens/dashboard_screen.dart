@@ -13,6 +13,7 @@ import '../providers/history_provider.dart';
 import '../providers/record_provider.dart';
 import '../providers/upload_provider.dart';
 import '../widgets/language_selector_sheet.dart';
+import '../widgets/upload_live_transcription_sheet.dart';
 import 'details_screen.dart';
 import 'recorder_screen.dart';
 import 'saved_list_screen.dart';
@@ -70,45 +71,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     final isUploading = uploadState.status == UploadStatus.picking ||
         uploadState.status == UploadStatus.transcribing ||
+        uploadState.status == UploadStatus.streaming ||
         uploadState.status == UploadStatus.saving;
-
-    ref.listen<UploadState>(uploadNotifierProvider, (previous, next) {
-      if (next.status == UploadStatus.success && next.transcriptionId != null) {
-        Navigator.of(context).push(
-          SlideUpRoute(
-            builder: (context) =>
-                DetailsScreen(transcriptionId: next.transcriptionId!),
-          ),
-        ).then((_) {
-          ref.read(uploadNotifierProvider.notifier).reset();
-        });
-      } else if (next.status == UploadStatus.error && next.errorMessage != null) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: Theme.of(context).cardColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            title: const Row(
-              children: [
-                Icon(Icons.error_outline_rounded, color: Palette.coral),
-                SizedBox(width: 8),
-                Text('Upload Error', style: TextStyle(fontWeight: FontWeight.w700)),
-              ],
-            ),
-            content: Text(next.errorMessage!),
-            actions: [
-              TextButton(
-                child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700)),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  ref.read(uploadNotifierProvider.notifier).reset();
-                },
-              ),
-            ],
-          ),
-        );
-      }
-    });
 
     final userName = userDetails.value?.name.isNotEmpty == true
         ? userDetails.value!.name.split(' ').first
@@ -333,10 +297,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                         children: [
                           _ActionPill(
                             icon: Icons.upload_file_rounded,
-                            label: isUploading ? 'Processing...' : 'Upload Audio',
+                            label: isUploading ? 'Transcribing...' : 'Upload Audio',
                             bg: tintBg,
                             onTap: isUploading
-                                ? () {}
+                                ? () {
+                                    showUploadLiveTranscriptionModal(context);
+                                  }
                                 : () async {
                                     final chosenLang = await showLanguageSheet(
                                       context,
@@ -344,10 +310,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                       currentCode: recordState.selectedLanguageCode,
                                       actionLabel: 'Select Audio File  →',
                                     );
-                                    if (chosenLang != null) {
-                                      ref
+                                    if (chosenLang != null && context.mounted) {
+                                      final file = await ref
                                           .read(uploadNotifierProvider.notifier)
-                                          .pickAndTranscribeAudio(chosenLang);
+                                          .pickAudioFile();
+                                      if (file != null && context.mounted) {
+                                        showUploadLiveTranscriptionModal(context);
+                                        ref
+                                            .read(uploadNotifierProvider.notifier)
+                                            .startTranscribingFile(file, chosenLang);
+                                      }
                                     }
                                   },
                           ),

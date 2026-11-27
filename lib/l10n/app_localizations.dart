@@ -212,6 +212,12 @@ abstract class AppLocalizations {
   /// **'An unexpected error occurred.'**
   String get errorUnknown;
 
+  /// No description provided for @durationUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown duration'**
+  String get durationUnknown;
+
   /// Debug details for transcription provider, detected language, and segments count
   ///
   /// In en, this message translates to:
@@ -219,8 +225,71 @@ abstract class AppLocalizations {
   String transcriptionDetails(
       String provider, String detectedLang, int segments, int dropped);
 
-  /// Localized string for unknown duration
-  String get durationUnknown;
+  /// No description provided for @uploadLiveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Live Audio Transcription'**
+  String get uploadLiveTitle;
+
+  /// No description provided for @uploadConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to AI model...'**
+  String get uploadConnecting;
+
+  /// No description provided for @uploadTranscribing.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcribing speech live...'**
+  String get uploadTranscribing;
+
+  /// No description provided for @uploadSaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving note to database...'**
+  String get uploadSaving;
+
+  /// No description provided for @uploadComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcription Complete'**
+  String get uploadComplete;
+
+  /// No description provided for @uploadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcription Failed'**
+  String get uploadFailed;
+
+  /// No description provided for @viewNote.
+  ///
+  /// In en, this message translates to:
+  /// **'View Note'**
+  String get viewNote;
+
+  /// No description provided for @copyText.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy Text'**
+  String get copyText;
+
+  /// No description provided for @textCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Transcript copied to clipboard'**
+  String get textCopied;
+
+  /// No description provided for @done.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get done;
+
+  /// No description provided for @tryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Try Again'**
+  String get tryAgain;
 }
 
 class _AppLocalizationsDelegate

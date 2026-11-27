@@ -29,5 +29,16 @@
       "segments": {"type": "int"},
       "dropped": {"type": "int"}
     }
-  }
+  },
+  "uploadLiveTitle": "Live Audio Transcription",
+  "uploadConnecting": "Connecting to AI model...",
+  "uploadTranscribing": "Transcribing speech live...",
+  "uploadSaving": "Saving note to database...",
+  "uploadComplete": "Transcription Complete",
+  "uploadFailed": "Transcription Failed",
+  "viewNote": "View Note",
+  "copyText": "Copy Text",
+  "textCopied": "Transcript copied to clipboard",
+  "done": "Done",
+  "tryAgain": "Try Again"
 }
