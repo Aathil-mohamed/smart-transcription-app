@@ -117,7 +117,8 @@ class TranscriptionModel {
       audioLocalPath: map['audioLocalPath'],
       provider: map['provider'],
       detectedLanguage: map['detectedLanguage'],
-      segmentCount: (map['segmentCount'] as num?)?.toInt() ?? parsedSegments?.length,
+      segmentCount:
+          (map['segmentCount'] as num?)?.toInt() ?? parsedSegments?.length,
       droppedSegmentCount: (map['droppedSegmentCount'] as num?)?.toInt(),
       segments: parsedSegments,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -146,7 +147,8 @@ class TranscriptionModel {
       audioLocalPath: data['audioLocalPath'],
       provider: data['provider'],
       detectedLanguage: data['detectedLanguage'],
-      segmentCount: (data['segmentCount'] as num?)?.toInt() ?? parsedSegments?.length,
+      segmentCount:
+          (data['segmentCount'] as num?)?.toInt() ?? parsedSegments?.length,
       droppedSegmentCount: (data['droppedSegmentCount'] as num?)?.toInt(),
       segments: parsedSegments,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),

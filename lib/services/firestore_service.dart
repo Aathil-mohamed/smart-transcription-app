@@ -42,7 +42,8 @@ class FirestoreService {
   }
 
   // 3. Read - Retrieve a single transcription by ID
-  Future<TranscriptionModel?> getTranscriptionById(String transcriptionId) async {
+  Future<TranscriptionModel?> getTranscriptionById(
+      String transcriptionId) async {
     try {
       final doc = await _firestore
           .collection(_config.firestore.collectionTranscriptions)
@@ -80,7 +81,8 @@ class FirestoreService {
             await file.delete();
           }
         } catch (e) {
-          debugPrint('Failed to delete local audio file for $transcriptionId: $e');
+          debugPrint(
+              'Failed to delete local audio file for $transcriptionId: $e');
         }
       }
 
